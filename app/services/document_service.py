@@ -1,5 +1,6 @@
 """Document upload, listing, retrieval, and deletion."""
 
+import asyncio
 import hashlib
 import structlog
 
@@ -71,7 +72,19 @@ async def upload_document(
         vs = get_vector_store()
         bm = get_bm25_manager()
 
-        embeddings = await emb.embed(chunks_text)
+        # Embed with per-chunk retry (3 attempts each)
+        embeddings = []
+        emb_retries = 3
+        for chunk_text_content in chunks_text:
+            for attempt in range(emb_retries):
+                try:
+                    vec = (await emb.embed([chunk_text_content]))[0]
+                    embeddings.append(vec)
+                    break
+                except Exception:
+                    if attempt == emb_retries - 1:
+                        raise
+                    await asyncio.sleep(2 ** attempt)
 
         for i, (chunk_content, embedding) in enumerate(zip(chunks_text, embeddings), start=1):
             chunk = DocumentChunk(

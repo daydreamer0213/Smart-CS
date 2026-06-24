@@ -2,7 +2,7 @@
 
 import structlog
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 logger = structlog.get_logger()
@@ -35,6 +35,8 @@ async def upload(
         raise HTTPException(400, "No filename provided")
 
     data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(413, f"File too large, max {MAX_FILE_SIZE // 1024 // 1024} MB")
     ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
     if ext not in {"pdf", "docx", "xlsx", "txt", "md"}:
         raise HTTPException(400, f"Unsupported file type: .{ext}")

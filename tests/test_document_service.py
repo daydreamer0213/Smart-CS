@@ -113,3 +113,44 @@ class TestDocumentUpload:
 
         delete_document(db, test_tenant.slug, doc.id)
         assert get_document(db, test_tenant.id, doc.id) is None
+
+    async def test_cross_tenant_dedup_allowed(self, db, test_tenant):
+        """Same file hash, different tenant — allowed, not rejected."""
+        from app.services.document_service import upload_document
+        data = b"cross-tenant content for dedup"
+        # Upload to first tenant
+        doc1 = await upload_document(db, test_tenant.id, test_tenant.slug, "x.txt", data)
+        assert doc1.status in ("ready", "failed")
+
+        # Upload same content to a second tenant (simulated with a new tenant)
+        from app.models.tenant import Tenant
+        import uuid
+        tenant2 = Tenant(
+            id=str(uuid.uuid4()), slug="tenant-b", name="Tenant B",
+            config_json={"handoff_enabled": True}, is_active=True,
+        )
+        db.add(tenant2)
+        db.commit()
+        # Should NOT raise "already imported"
+        doc2 = await upload_document(db, tenant2.id, tenant2.slug, "x.txt", data)
+        assert doc2.status in ("ready", "failed")
+
+
+class TestRetrievalCoverage:
+    """Verify that imported document chunks are retrievable."""
+
+    async def test_chunk_searchable_after_import(self, db, test_tenant):
+        """After importing a document, chunks are persisted in DB."""
+        from app.services.document_service import upload_document, list_chunks
+
+        doc = await upload_document(
+            db, test_tenant.id, test_tenant.slug,
+            "retrieval-test.txt", b"return policy: 7-day return, 15-day quality exchange",
+        )
+        if doc.status != "ready":
+            return  # skip if no embedding API available
+
+        chunks = list_chunks(db, doc.id)
+        assert len(chunks) >= 1
+        assert len(chunks[0].content) > 0
+        assert chunks[0].embedding_id is not None

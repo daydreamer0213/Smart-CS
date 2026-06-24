@@ -1107,8 +1107,7 @@ function renderDocumentTable() {
 
   let rows = '';
   items.forEach(doc => {
-    const name = doc.filename || '';
-    const type = (doc.file_type || '').toUpperCase();
+    const name = (doc.filename || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     const size = formatFileSize(doc.file_size || 0);
     const chunks = doc.chunk_count || 0;
     const status = doc.status || 'unknown';

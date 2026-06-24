@@ -3,8 +3,6 @@
 import io
 from pathlib import Path
 
-SUPPORTED_TYPES = {"pdf", "docx", "xlsx", "txt", "md"}
-
 
 def parse_pdf(data: bytes) -> str:
     """Extract text from a PDF using PyMuPDF."""

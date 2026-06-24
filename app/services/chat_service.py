@@ -37,7 +37,7 @@ def _get_llm() -> LLMClient:
     return _llm_client
 
 
-async def _retrieve(tenant_slug: str, query: str) -> list[dict]:
+async def _retrieve(tenant_slug: str, query: str, db) -> list[dict]:
     vs = get_vector_store()
     bm = get_bm25_manager()
     emb = get_embedding_provider()
@@ -48,12 +48,19 @@ async def _retrieve(tenant_slug: str, query: str) -> list[dict]:
 
     fused = rrf_fusion(vector_results, bm25_results, top_k=5)
 
-    # Enrich with knowledge item content
+    # Enrich with actual question/answer from database
+    from app.models.knowledge import KnowledgeItem
+    doc_ids = [r["doc_id"] for r in fused]
+    items = db.query(KnowledgeItem).filter(KnowledgeItem.id.in_(doc_ids)).all() if doc_ids else []
+    item_map = {item.id: item for item in items}
+
     return [
         {
             "doc_id": r["doc_id"],
             "score": r["score"],
             "sources": r["sources"],
+            "question": item_map[r["doc_id"]].question if r["doc_id"] in item_map else "",
+            "answer": item_map[r["doc_id"]].answer if r["doc_id"] in item_map else "",
         }
         for r in fused
     ]
@@ -105,7 +112,7 @@ async def process_chat(
             )
 
     # Step 1: Hybrid retrieval
-    retrieval_results = await _retrieve(tenant.slug, message)
+    retrieval_results = await _retrieve(tenant.slug, message, db)
 
     # Step 2: Intent classification
     tenant_config = tenant.config_json or {}
@@ -114,9 +121,7 @@ async def process_chat(
         human_keywords=tenant_config.get("human_keywords", []),
         retrieval_results=retrieval_results,
         llm_client=_get_llm(),
-        confidence_threshold=tenant_config.get(
-            "intent_threshold_override", settings.intent_confidence_threshold
-        ),
+        confidence_threshold=tenant_config.get("intent_threshold_override") or settings.intent_confidence_threshold,
     )
 
     # Step 3: Human handoff
@@ -234,7 +239,7 @@ async def process_chat_stream(
             return
 
     # Step 1: Hybrid retrieval
-    retrieval_results = await _retrieve(tenant.slug, message)
+    retrieval_results = await _retrieve(tenant.slug, message, db)
 
     # Step 2: Intent classification
     tenant_config = tenant.config_json or {}
@@ -243,9 +248,7 @@ async def process_chat_stream(
         human_keywords=tenant_config.get("human_keywords", []),
         retrieval_results=retrieval_results,
         llm_client=_get_llm(),
-        confidence_threshold=tenant_config.get(
-            "intent_threshold_override", settings.intent_confidence_threshold
-        ),
+        confidence_threshold=tenant_config.get("intent_threshold_override") or settings.intent_confidence_threshold,
     )
 
     # Step 3: Human handoff

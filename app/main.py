@@ -63,6 +63,25 @@ async def lifespan(_app: FastAPI):
                     )
                 )
             db.commit()
+
+            # Seed FAQ data for demo tenant if knowledge_items is empty
+            demo_tenant = db.query(Tenant).filter(Tenant.slug == "demo").first()
+            if demo_tenant:
+                from app.models.knowledge import KnowledgeItem
+                if db.query(KnowledgeItem).filter(KnowledgeItem.tenant_id == demo_tenant.id).count() == 0:
+                    faq_path = _PROJECT_ROOT / "data" / "seed" / "faq_template.json"
+                    if faq_path.exists():
+                        with open(faq_path, encoding="utf-8") as f:
+                            faq_items = json.load(f)
+                        for faq in faq_items:
+                            db.add(KnowledgeItem(
+                                tenant_id=demo_tenant.id,
+                                question=faq["question"],
+                                answer=faq["answer"],
+                                keywords=faq.get("keywords", ""),
+                                status="active",
+                            ))
+                        db.commit()
     finally:
         db.close()
 

@@ -46,8 +46,9 @@ async def classify_intent(
                 ],
                 IntentOutput,
             )
-            if result.confidence >= confidence_threshold:
-                return (result.intent, "llm", result.confidence)
+            conf = float(result.confidence) if result.confidence is not None else 0.0
+            if conf >= confidence_threshold:
+                return (result.intent, "llm", conf)
         except Exception as e:
             logger.error("intent_llm_failed", error=str(e))
 

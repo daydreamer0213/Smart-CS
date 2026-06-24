@@ -42,17 +42,26 @@ class LLMClient:
     async def chat_structured(
         self, messages: list[dict], output_class: type[BaseModel]
     ) -> BaseModel:
-        completion = await self._client.beta.chat.completions.parse(
-            model=self._model,
-            messages=messages,
-            response_format=output_class,
-            temperature=0.0,
-        )
-        result = completion.choices[0].message.parsed
-        if result is None:
-            content = completion.choices[0].message.content or "{}"
-            return output_class.model_validate_json(content)
-        return result
+        # DeepSeek doesn't support beta.chat.completions.parse.
+        # Use regular chat completion + JSON parse as fallback.
+        schema_hint = output_class.model_json_schema()
+        messages_with_instruction = list(messages)
+        messages_with_instruction.append({
+            "role": "system",
+            "content": (
+                f"You must respond with valid JSON only. "
+                f"No markdown, no explanation. Schema: {schema_hint}"
+            ),
+        })
+        text = await self.chat(messages_with_instruction, temperature=0.0)
+        # Strip markdown code fences if present
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1]
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+        return output_class.model_validate_json(text)
 
     async def chat_stream(
         self, messages: list[dict], temperature: float = 0.1, max_tokens: int = 1000

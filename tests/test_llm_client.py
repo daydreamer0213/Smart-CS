@@ -13,11 +13,13 @@ class TestOutput(BaseModel):
 
 async def test_chat_structured_parses_json():
     client = LLMClient(api_key="sk-test", base_url="https://test.api", model="test")
-    mock_response = mock.AsyncMock()
-    mock_response.choices = [
-        mock.MagicMock(message=mock.MagicMock(parsed=TestOutput(result="hello")))
-    ]
-    client._client.beta.chat.completions.parse = mock.AsyncMock(return_value=mock_response)
+    # chat_structured now uses regular chat() + JSON parse (DeepSeek-compatible)
+    async def fake_chat(**kwargs):
+        return mock.MagicMock(
+            choices=[mock.MagicMock(message=mock.MagicMock(content='{"result":"hello"}'))]
+        )
+
+    client._client.chat.completions.create = fake_chat
 
     result = await client.chat_structured(
         [{"role": "user", "content": "test"}], TestOutput

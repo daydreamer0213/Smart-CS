@@ -4,6 +4,8 @@ import time
 import uuid
 from contextvars import ContextVar
 
+import logging
+
 import structlog
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -13,7 +15,7 @@ request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 
 
 def setup_structlog(log_level: str = "INFO") -> None:
-    level = getattr(structlog, log_level.upper(), structlog.INFO)
+    level = getattr(logging, log_level.upper(), logging.INFO)
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,

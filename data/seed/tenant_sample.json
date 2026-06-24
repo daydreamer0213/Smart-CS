@@ -1,0 +1,13 @@
+{
+  "slug": "demo",
+  "name": "DemoStore",
+  "config_json": {
+    "human_keywords": ["人工", "客服", "经理", "投诉"],
+    "system_prompt_append": "",
+    "model_override": null,
+    "cache_ttl_override": null,
+    "intent_threshold_override": null,
+    "handoff_enabled": true
+  },
+  "is_active": true
+}

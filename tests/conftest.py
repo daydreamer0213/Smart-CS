@@ -19,6 +19,58 @@ from app.main import create_app
 from app.models import Base
 from app.models.tenant import AdminApiKey, Tenant
 
+# ---- Initialise retrieval & LLM singletons (lifespan does not run via ASGITransport) ----
+# httpx ASGITransport does not send lifespan events, so the retrieval
+# singletons set during ``lifespan()`` in ``app/main.py`` never get
+# populated.  We initialise them here with lightweight fakes so that
+# any code path that calls ``get_*`` from ``retrieval_module`` does
+# not hit an ``AssertionError``.
+#
+# The embedding provider is replaced by a fake that returns a constant
+# zero vector so that tests never make real network calls.
+#
+# The LLM API key is set to a dummy so that ``LLMClient.__init__`` does
+# not raise (it still requires a non-empty string).  Real API calls
+# will fail, but ``classify_intent`` catches those and falls through to
+# the "human" handoff default.
+import tempfile
+
+from app.config import settings
+
+import app.core.retrieval_module as rm
+from app.core.cache.exact import ExactCache
+from app.core.cache.semantic import SemanticCache
+from app.core.embedding.base import BaseEmbeddingProvider
+from app.core.retrieval.bm25_index import BM25IndexManager
+from app.core.retrieval.vector_store import VectorStore
+
+_chroma_tmpdir = tempfile.mkdtemp(prefix="smartcs_chroma_")
+
+rm.set_vector_store(VectorStore(_chroma_tmpdir))
+rm.set_bm25_manager(BM25IndexManager())
+rm.set_l1_cache(ExactCache())
+rm.set_l2_cache(SemanticCache())
+
+
+class _FakeEmbeddingProvider(BaseEmbeddingProvider):
+    """Returns a constant 4-dim vector so tests never call a real API."""
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[0.0, 0.1, 0.2, 0.3] for _ in texts]
+
+    @property
+    def dim(self) -> int:
+        return 4
+
+
+rm.set_embedding_provider(_FakeEmbeddingProvider())
+
+# Set a dummy LLM API key so ``LLMClient.__init__`` does not raise
+# ``OpenAIError: Missing credentials`` when the chat pipeline constructs
+# the LLM client (which happens before ``classify_intent`` is invoked).
+if not settings.llm_api_key:
+    settings.llm_api_key = "sk-test-dummy"
+
 
 @pytest.fixture(scope="session")
 def engine():

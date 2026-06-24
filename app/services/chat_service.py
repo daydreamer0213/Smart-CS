@@ -13,10 +13,8 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.agent.graph import build_agent_graph
 from app.core.agent.state import AgentState
-from app.core.cache.exact import ExactCache
-from app.core.cache.semantic import SemanticCache
-from app.core.embedding import get_embedding_provider as emb_factory
-from app.core.llm.prompts import HANDOFF_MESSAGE, build_agent_system_prompt
+from app.core.agent.tools import is_handoff_triggered, set_runtime
+from app.core.llm.prompts import build_agent_system_prompt
 from app.core.retrieval_module import (
     get_embedding_provider,
     get_l1_cache,
@@ -98,8 +96,7 @@ async def _run_agent(
     config = {"configurable": {"thread_id": session_id}}
 
     # Inject runtime context for tools (tenant_slug, db)
-    from app.core.agent.tools import set_runtime as set_tool_runtime
-    set_tool_runtime(tenant.slug, db)
+    set_runtime(tenant.slug, db)
 
     initial_state: AgentState = {
         "messages": [
@@ -125,7 +122,16 @@ async def _run_agent(
             answer = m["content"]
             break
 
-    from app.core.agent.tools import is_handoff_triggered
+    # Extract sources from search_knowledge tool output
+    sources = []
+    for m in messages:
+        if hasattr(m, "type") and m.type == "tool" and getattr(m, "name", "") == "search_knowledge":
+            try:
+                parsed = json.loads(str(m.content))
+                sources = parsed.get("results", [])
+            except (json.JSONDecodeError, TypeError):
+                pass
+
     handoff = is_handoff_triggered()
 
     # Persist conversation
@@ -166,7 +172,7 @@ async def _run_agent(
         answer=answer,
         intent="human" if handoff else "faq",
         confidence=1.0,
-        sources=[],
+        sources=sources,
         cache_hit="miss",
         session_id=session_id,
         handoff=handoff,
@@ -215,8 +221,7 @@ async def process_chat_stream(
     )
 
     # Inject runtime context for tools
-    from app.core.agent.tools import set_runtime as set_tool_runtime
-    set_tool_runtime(tenant.slug, db)
+    set_runtime(tenant.slug, db)
 
     graph = _get_graph()
     config = {"configurable": {"thread_id": session_id}}

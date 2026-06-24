@@ -10,7 +10,7 @@ from app.db import SessionLocal
 from app.middleware.logging import request_id_var
 from app.models.tenant import Tenant
 
-_CHAT_PATH_RE = re.compile(r"^/api/v\d+/([^/]+)/(?:chat|health)$")
+_CHAT_PATH_RE = re.compile(r"^/api/v\d+/([^/]+)/(?:chat(?:/stream)?|health)$")
 _ADMIN_PATH_RE = re.compile(r"^/api/v\d+/admin/([^/]+)/")
 
 

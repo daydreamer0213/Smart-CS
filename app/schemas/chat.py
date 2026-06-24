@@ -1,17 +1,17 @@
-"""Chat schemas — request/response models for the chat API endpoint.
+"""Chat request/response schemas."""
 
-Covers single-turn Q&A and multi-turn conversation payloads,
-including visitor_id, session_id, message content, and optional context.
-"""
-
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ChatRequest(BaseModel):
-    """Placeholder for chat request schema."""
-    pass
+    session_id: str = Field("", description="Client-generated UUID, empty on first message")
+    message: str = Field(..., min_length=1, max_length=2000)
 
 
 class ChatResponse(BaseModel):
-    """Placeholder for chat response schema."""
-    pass
+    answer: str
+    intent: str  # "faq" | "human"
+    confidence: float
+    sources: list[dict]  # [{"question": "...", "answer": "...", "score": 0.95}, ...]
+    cache_hit: str  # "L1" | "L2" | "miss"
+    session_id: str

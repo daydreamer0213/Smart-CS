@@ -1,14 +1,31 @@
-"""Customer chat endpoint — Phase 2 implementation."""
+"""Customer chat endpoint."""
+
+import uuid
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.middleware.tenant import TenantMiddleware
+from app.schemas.chat import ChatRequest, ChatResponse
+from app.services.chat_service import process_chat
 
 router = APIRouter()
 
 
 @router.post("/api/v1/{tenant_slug}/chat")
-async def chat(request: Request, db: Session = Depends(get_db)):
-    """Customer service chat endpoint. Full pipeline: cache -> intent -> retrieval -> LLM."""
-    return {"status": "not_implemented"}
+async def chat(
+    request: Request,
+    body: ChatRequest,
+    db: Session = Depends(get_db),
+):
+    tenant = request.state.tenant
+    session_id = body.session_id or str(uuid.uuid4())
+
+    return await process_chat(
+        tenant_slug=tenant.slug,
+        tenant_name=tenant.name,
+        tenant_config=tenant.config_json or {},
+        session_id=session_id,
+        message=body.message,
+    )

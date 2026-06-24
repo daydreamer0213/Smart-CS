@@ -10,7 +10,10 @@ ensuring the two stores stay consistent.
 import asyncio
 import concurrent.futures
 
+import structlog
 from sqlalchemy.orm import Session
+
+logger = structlog.get_logger()
 
 from app.models.knowledge import Category, KnowledgeItem
 from app.schemas.knowledge import (
@@ -174,6 +177,7 @@ def create_knowledge(
 
     db.commit()
     db.refresh(item)
+    logger.info("knowledge_created", item_id=item.id, tenant_slug=tenant_slug or "none")
     return item
 
 
@@ -206,6 +210,7 @@ def update_knowledge(
 
     db.commit()
     db.refresh(item)
+    logger.info("knowledge_updated", item_id=item.id, fields=list(update_data.keys()))
     return item
 
 
@@ -230,6 +235,7 @@ def delete_knowledge(
 
     db.commit()
     db.refresh(item)
+    logger.info("knowledge_deleted", item_id=item.id, tenant_slug=tenant_slug or "none")
     return item
 
 

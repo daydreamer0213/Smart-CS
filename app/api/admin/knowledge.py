@@ -1,7 +1,11 @@
 """Admin knowledge base CRUD."""
 
+import structlog
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+
+logger = structlog.get_logger()
 
 from app.api.admin.auth import verify_admin
 from app.api.deps import get_db, get_tenant
@@ -62,6 +66,7 @@ async def create_knowledge(
     _admin: AdminApiKey = Depends(verify_admin),
 ):
     item = knowledge_service.create_knowledge(db, tenant.id, body, tenant_slug=tenant_slug)
+    logger.info("admin_knowledge_created", tenant_slug=tenant_slug, item_id=item.id)
     return _item_to_response(item)
 
 
@@ -89,6 +94,7 @@ async def update_knowledge(
     if item is None or item.tenant_id != tenant.id:
         raise HTTPException(status_code=404, detail="Knowledge item not found")
     updated = knowledge_service.update_knowledge(db, item_id, body, tenant_slug=tenant_slug)
+    logger.info("admin_knowledge_updated", tenant_slug=tenant_slug, item_id=item_id)
     return _item_to_response(updated)
 
 
@@ -103,6 +109,7 @@ async def delete_knowledge(
     if item is None or item.tenant_id != tenant.id:
         raise HTTPException(status_code=404, detail="Knowledge item not found")
     knowledge_service.delete_knowledge(db, item_id, tenant_slug=tenant_slug)
+    logger.info("admin_knowledge_deleted", tenant_slug=tenant_slug, item_id=item_id)
     return {"status": "archived"}
 
 
@@ -117,6 +124,7 @@ async def batch_import(
     for data in body:
         item = knowledge_service.create_knowledge(db, tenant.id, data, tenant_slug=tenant_slug)
         items.append(_item_to_response(item))
+    logger.info("admin_knowledge_batch_imported", tenant_slug=tenant_slug, count=len(items))
     return {"imported": len(items), "items": items}
 
 

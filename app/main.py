@@ -19,6 +19,7 @@ from app.api.health import router as health_router
 from app.config import settings
 from app.middleware.error_handler import register_error_handlers
 from app.middleware.logging import LoggingMiddleware, setup_structlog
+from app.middleware.ratelimit import RateLimitMiddleware
 from app.middleware.tenant import TenantMiddleware
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -129,10 +130,10 @@ def create_app() -> FastAPI:
 
     # 2. Add middlewares.
     #    Starlette applies middlewares in reverse addition order (last added = outermost).
-    #    We want: LoggingMiddleware (outermost, wraps everything)
-    #             TenantMiddleware (inner, inside logging)
-    app.add_middleware(TenantMiddleware)   # Added first  -> inner
-    app.add_middleware(LoggingMiddleware)  # Added last   -> outer (wraps everything)
+    #    Order (request path): Logging -> RateLimit -> Tenant -> route handler
+    app.add_middleware(TenantMiddleware)     # Added first  -> innermost
+    app.add_middleware(RateLimitMiddleware, rpm=settings.rate_limit_per_minute)
+    app.add_middleware(LoggingMiddleware)    # Added last   -> outermost (wraps everything)
 
     # 3. Include API routers
     app.include_router(health_router)

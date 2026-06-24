@@ -1,7 +1,7 @@
 """Chat pipeline — now driven by the LangGraph agent.
 
 The non-streaming ``process_chat`` and streaming ``process_chat_stream``
-both check L1/L2 cache first, then delegate to the agent graph.
+check chitchat → L1/L2 cache → then delegate to the agent graph.
 """
 
 import json
@@ -25,6 +25,22 @@ from app.schemas.chat import ChatResponse
 
 logger = structlog.get_logger()
 
+# Simple greetings that don't need any API calls
+_CHITCHAT_PATTERNS = {
+    "你好", "在吗", "在不在", "hi", "hello", "您好", "嗨",
+    "早上好", "下午好", "晚上好", "早", "晚安", "再见", "拜拜",
+    "谢谢", "多谢", "thanks", "thank you", "ok", "好的",
+}
+
+
+def _chitchat_reply(message: str, tenant_name: str) -> str | None:
+    """Return a canned reply for pure chitchat, or None if not chitchat."""
+    cleaned = message.strip().lower().rstrip("!！。.～~?？")
+    if cleaned in _CHITCHAT_PATTERNS or len(cleaned) <= 1:
+        return f"您好！我是{tenant_name}的智能客服，有什么可以帮助您的？"
+    return None
+
+
 _agent_graph = None
 
 
@@ -35,16 +51,30 @@ def _get_graph():
     return _agent_graph
 
 
+async def _emit_chitchat(tenant_name: str, session_id: str, msg: str):
+    """Yield a done SSE event for a chitchat reply."""
+    answer = _chitchat_reply(msg, tenant_name)
+    yield f"data: {json.dumps({'type': 'done', 'data': {'answer': answer, 'intent': 'faq', 'confidence': 1.0, 'sources': [], 'cache_hit': 'L1', 'session_id': session_id, 'handoff': False}})}\n\n"
+
+
 async def process_chat(
     tenant: Tenant,
     db: Session,
     session_id: str,
     message: str,
 ) -> ChatResponse:
-    """Non-streaming chat — cache check then agent invocation."""
+    """Non-streaming chat — chitchat → cache → agent."""
     t0 = time.monotonic()
 
-    # Fast path: L1 exact cache
+    # Fast path 0: chitchat — no API calls at all
+    cr = _chitchat_reply(message, tenant.name)
+    if cr:
+        return ChatResponse(
+            answer=cr, intent="faq", confidence=1.0,
+            sources=[], cache_hit="L1", session_id=session_id,
+        )
+
+    # Fast path 1: L1 exact cache
     l1 = get_l1_cache()
     if l1:
         cached = l1.get(tenant.id, message)
@@ -185,10 +215,17 @@ async def process_chat_stream(
     session_id: str,
     message: str,
 ):
-    """Streaming chat — yields SSE events via LangGraph astream_events."""
+    """Streaming chat — yields SSE events, chitchat → cache → agent."""
     t0 = time.monotonic()
 
-    # Fast path: L1 exact cache
+    # Fast path 0: chitchat — no API calls at all
+    cr = _chitchat_reply(message, tenant.name)
+    if cr:
+        logger.info("chat_chitchat", message=message)
+        yield f"data: {json.dumps({'type': 'done', 'data': {'answer': cr, 'intent': 'faq', 'confidence': 1.0, 'sources': [], 'cache_hit': 'L1', 'session_id': session_id, 'handoff': False}})}\n\n"
+        return
+
+    # Fast path 1: L1 exact cache
     l1 = get_l1_cache()
     if l1:
         cached = l1.get(tenant.id, message)

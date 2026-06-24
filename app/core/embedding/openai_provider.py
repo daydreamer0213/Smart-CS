@@ -12,7 +12,7 @@ class OpenAIEmbeddingProvider(BaseEmbeddingProvider):
         model: str = "text-embedding-3-small",
         base_url: str | None = None,
     ):
-        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=10.0)
         self._model = model
 
     async def embed(self, texts: list[str]) -> list[list[float]]:

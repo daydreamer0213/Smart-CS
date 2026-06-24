@@ -26,6 +26,7 @@ def _build_llm() -> ChatOpenAI:
         max_tokens=800,
         max_retries=3,
         timeout=30.0,
+        streaming=True,
     )
     return llm.bind_tools(_TOOLS)
 

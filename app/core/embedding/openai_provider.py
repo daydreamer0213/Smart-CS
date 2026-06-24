@@ -6,8 +6,13 @@ from app.core.embedding.base import BaseEmbeddingProvider
 
 
 class OpenAIEmbeddingProvider(BaseEmbeddingProvider):
-    def __init__(self, api_key: str, model: str = "text-embedding-3-small"):
-        self._client = AsyncOpenAI(api_key=api_key)
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "text-embedding-3-small",
+        base_url: str | None = None,
+    ):
+        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self._model = model
 
     async def embed(self, texts: list[str]) -> list[list[float]]:

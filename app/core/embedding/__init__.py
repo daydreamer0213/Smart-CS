@@ -12,4 +12,5 @@ def get_embedding_provider(settings: Settings) -> BaseEmbeddingProvider:
     return OpenAIEmbeddingProvider(
         api_key=settings.embedding_api_key or settings.llm_api_key,
         model=settings.embedding_model,
+        base_url=settings.embedding_base_url or None,
     )

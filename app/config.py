@@ -11,9 +11,10 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_base_url: str = "https://api.deepseek.com/v1"
     llm_model: str = "deepseek-chat"
-    embedding_model: str = "text-embedding-3-small"
+    embedding_model: str = "text-embedding-v2"
     embedding_provider: str = "openai"
     embedding_api_key: str = ""
+    embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     l1_cache_ttl: int = 300
     l2_cache_threshold: float = 0.85
     intent_confidence_threshold: float = 0.6

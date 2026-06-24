@@ -61,7 +61,7 @@ async def create_knowledge(
     tenant: Tenant = Depends(get_tenant),
     _admin: AdminApiKey = Depends(verify_admin),
 ):
-    item = knowledge_service.create_knowledge(db, tenant.id, body)
+    item = knowledge_service.create_knowledge(db, tenant.id, body, tenant_slug=tenant_slug)
     return _item_to_response(item)
 
 
@@ -88,7 +88,7 @@ async def update_knowledge(
     item = knowledge_service.get_knowledge(db, item_id)
     if item is None or item.tenant_id != tenant.id:
         raise HTTPException(status_code=404, detail="Knowledge item not found")
-    updated = knowledge_service.update_knowledge(db, item_id, body)
+    updated = knowledge_service.update_knowledge(db, item_id, body, tenant_slug=tenant_slug)
     return _item_to_response(updated)
 
 
@@ -102,7 +102,7 @@ async def delete_knowledge(
     item = knowledge_service.get_knowledge(db, item_id)
     if item is None or item.tenant_id != tenant.id:
         raise HTTPException(status_code=404, detail="Knowledge item not found")
-    knowledge_service.delete_knowledge(db, item_id)
+    knowledge_service.delete_knowledge(db, item_id, tenant_slug=tenant_slug)
     return {"status": "archived"}
 
 
@@ -115,7 +115,7 @@ async def batch_import(
 ):
     items = []
     for data in body:
-        item = knowledge_service.create_knowledge(db, tenant.id, data)
+        item = knowledge_service.create_knowledge(db, tenant.id, data, tenant_slug=tenant_slug)
         items.append(_item_to_response(item))
     return {"imported": len(items), "items": items}
 

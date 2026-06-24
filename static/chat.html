@@ -1,5 +1,701 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><title>SmartCS Chat</title></head>
-<body><h1>SmartCS Chat Widget — Phase 3</h1></body>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SmartCS 智能客服</title>
+<style>
+/* ===== Reset ===== */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --primary:#2563eb;
+  --primary-hover:#1d4ed8;
+  --header-bg:#1e293b;
+  --user-bubble:#2563eb;
+  --assistant-bubble:#f1f5f9;
+  --text-primary:#0f172a;
+  --text-secondary:#64748b;
+  --border:#e2e8f0;
+  --bg:#ffffff;
+  --radius:12px;
+  --shadow:0 1px 3px rgba(0,0,0,.08);
+}
+
+html,body{
+  height:100%;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  background:var(--bg);
+  color:var(--text-primary);
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ===== Layout ===== */
+#app{
+  display:flex;
+  flex-direction:column;
+  height:100%;
+  max-width:768px;
+  margin:0 auto;
+  border-left:1px solid var(--border);
+  border-right:1px solid var(--border);
+}
+
+/* ===== Header ===== */
+#header{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  height:56px;
+  padding:0 16px;
+  background:var(--header-bg);
+  color:#fff;
+  font-size:16px;
+  font-weight:600;
+  flex-shrink:0;
+  letter-spacing:.3px;
+}
+
+#header .status-dot{
+  width:8px;height:8px;border-radius:50%;background:#22c55e;
+  display:inline-block;margin-right:10px;
+  animation:pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse{
+  0%,100%{opacity:1}
+  50%{opacity:.4}
+}
+
+/* ===== Messages area ===== */
+#messages{
+  flex:1;
+  overflow-y:auto;
+  padding:16px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  scroll-behavior:smooth;
+  background:#fafbfc;
+}
+
+/* ===== Message bubbles ===== */
+.message{
+  display:flex;
+  max-width:85%;
+  animation:msgIn .25s ease-out;
+}
+.message.user{align-self:flex-end}
+.message.assistant{align-self:flex-start}
+
+@keyframes msgIn{
+  from{opacity:0;transform:translateY(10px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+.bubble{
+  padding:10px 14px;
+  border-radius:var(--radius);
+  font-size:14px;
+  line-height:1.65;
+  word-break:break-word;
+  white-space:pre-wrap;
+  position:relative;
+}
+
+.message.user .bubble{
+  background:var(--user-bubble);
+  color:#fff;
+  border-bottom-right-radius:4px;
+}
+
+.message.assistant .bubble{
+  background:var(--assistant-bubble);
+  color:var(--text-primary);
+  border-bottom-left-radius:4px;
+  box-shadow:var(--shadow);
+}
+
+/* ===== Sources collapsible ===== */
+.sources-toggle{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  color:var(--primary);
+  font-size:12px;
+  cursor:pointer;
+  user-select:none;
+  margin-bottom:6px;
+  padding:3px 10px;
+  background:#e0e7ff;
+  border-radius:5px;
+  transition:background .15s;
+}
+.sources-toggle:hover{background:#c7d2fe}
+
+.sources-toggle::after{
+  content:"";
+  display:inline-block;
+  width:0;height:0;
+  border-left:4px solid transparent;
+  border-right:4px solid transparent;
+  border-top:4px solid var(--primary);
+  transition:transform .2s;
+  margin-left:2px;
+}
+.sources-toggle.expanded::after{transform:rotate(180deg)}
+
+.sources-list{
+  display:none;
+  margin-top:6px;
+  margin-bottom:8px;
+  padding:8px 10px;
+  background:#f8fafc;
+  border:1px solid var(--border);
+  border-radius:6px;
+  font-size:12px;
+}
+.sources-list.show{display:block}
+
+.source-item{
+  padding:4px 0;
+  color:var(--text-secondary);
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+}
+.source-item+.source-item{
+  border-top:1px solid var(--border);
+  margin-top:4px;
+  padding-top:8px;
+}
+.source-item .doc-id{
+  font-family:ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;
+  color:var(--text-primary);
+  font-size:11px;
+  max-width:180px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.source-item .score{
+  white-space:nowrap;
+  color:var(--text-secondary);
+}
+
+/* ===== Typing indicator ===== */
+.typing{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  padding:6px 0;
+}
+.typing span{
+  width:7px;height:7px;
+  border-radius:50%;
+  background:#94a3b8;
+  animation:bounce 1.4s infinite ease-in-out both;
+}
+.typing span:nth-child(1){animation-delay:-.32s}
+.typing span:nth-child(2){animation-delay:-.16s}
+.typing span:nth-child(3){animation-delay:0s}
+
+@keyframes bounce{
+  0%,80%,100%{transform:scale(0)}
+  40%{transform:scale(1)}
+}
+
+/* ===== Metadata tags ===== */
+.metadata{
+  display:flex;
+  gap:4px;
+  margin-top:8px;
+  flex-wrap:wrap;
+}
+.tag{
+  font-size:10px;
+  line-height:1.4;
+  padding:1px 6px;
+  border-radius:3px;
+  background:#e2e8f0;
+  color:var(--text-secondary);
+  letter-spacing:.2px;
+}
+.tag.intent{background:#dbeafe;color:#1d4ed8}
+.tag.cache{background:#fef3c7;color:#92400e}
+.tag.confidence{background:#f0fdf4;color:#166534}
+
+/* ===== Welcome ===== */
+.welcome{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  flex:1;
+  text-align:center;
+  color:var(--text-secondary);
+  font-size:14px;
+  padding:20px;
+  gap:8px;
+}
+.welcome .icon{
+  width:56px;height:56px;
+  border-radius:50%;
+  background:#e0e7ff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:28px;
+  margin-bottom:4px;
+}
+.welcome h2{
+  font-size:17px;
+  font-weight:600;
+  color:var(--text-primary);
+}
+.welcome p{
+  font-size:13px;
+  color:#94a3b8;
+  max-width:280px;
+  line-height:1.5;
+}
+
+/* ===== Input area ===== */
+#input-area{
+  display:flex;
+  align-items:flex-end;
+  gap:8px;
+  padding:12px 16px;
+  padding-bottom:calc(12px + env(safe-area-inset-bottom,0px));
+  border-top:1px solid var(--border);
+  background:var(--bg);
+  flex-shrink:0;
+}
+
+#input{
+  flex:1;
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:10px 14px;
+  font-size:14px;
+  font-family:inherit;
+  line-height:1.5;
+  resize:none;
+  outline:none;
+  max-height:120px;
+  transition:border-color .2s,box-shadow .2s;
+}
+#input:focus{
+  border-color:var(--primary);
+  box-shadow:0 0 0 3px rgba(37,99,235,.12);
+}
+#input::placeholder{color:#94a3b8}
+
+#send-btn{
+  flex-shrink:0;
+  height:40px;
+  padding:0 20px;
+  background:var(--primary);
+  color:#fff;
+  border:none;
+  border-radius:10px;
+  font-size:14px;
+  font-weight:500;
+  cursor:pointer;
+  transition:background .15s,opacity .2s;
+  white-space:nowrap;
+  display:flex;
+  align-items:center;
+  gap:4px;
+}
+#send-btn:hover:not(:disabled){background:var(--primary-hover)}
+#send-btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* ===== Error state ===== */
+.bubble.error .content{color:#ef4444}
+
+/* ===== Responsive ===== */
+@media(max-width:640px){
+  #app{max-width:100%;border:none}
+  .message{max-width:92%}
+}
+@media(min-width:1024px){
+  #app{height:100vh}
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <header id="header">
+    <span class="status-dot"></span>
+    <span>SmartCS 智能客服</span>
+  </header>
+
+  <main id="messages">
+    <div class="welcome">
+      <div class="icon">&#x1F916;</div>
+      <h2>您好！有什么可以帮助您的？</h2>
+      <p>我是 SmartCS 智能客服，请提出您的问题</p>
+    </div>
+  </main>
+
+  <footer id="input-area">
+    <textarea id="input" placeholder="请输入您的问题..." rows="1"></textarea>
+    <button id="send-btn" disabled>发送</button>
+  </footer>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ===== UUID fallback for older browsers ===== */
+function generateUUID(){
+  if(typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'){
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){
+    var r=Math.random()*16|0;
+    return (c==='x'?r:(r&0x3|0x8)).toString(16);
+  });
+}
+
+/* ===== State ===== */
+var state={
+  sessionId: localStorage.getItem('chat_session_id') || generateUUID(),
+  tenant: (new URLSearchParams(location.search)).get('tenant') || 'demo',
+  isStreaming: false,
+  pendingMsgEl: null
+};
+
+localStorage.setItem('chat_session_id', state.sessionId);
+
+/* ===== DOM Refs ===== */
+var messagesEl=document.getElementById('messages');
+var inputEl=document.getElementById('input');
+var sendBtn=document.getElementById('send-btn');
+
+/* ===== Helpers ===== */
+function scrollBottom(){
+  requestAnimationFrame(function(){
+    messagesEl.scrollTop=messagesEl.scrollHeight;
+  });
+}
+
+function removeWelcome(){
+  var w=messagesEl.querySelector('.welcome');
+  if(w) w.remove();
+}
+
+/* ===== Message builder ===== */
+function addMessage(role, content, isPlaceholder){
+  removeWelcome();
+
+  var msgDiv=document.createElement('div');
+  msgDiv.className='message '+role;
+
+  var bubble=document.createElement('div');
+  bubble.className='bubble';
+
+  if(role==='assistant'){
+    // Sources container (hidden until data arrives)
+    var srcContainer=document.createElement('div');
+    srcContainer.className='sources-container';
+    bubble.appendChild(srcContainer);
+
+    // Content area
+    var contentDiv=document.createElement('div');
+    contentDiv.className='content';
+    if(isPlaceholder){
+      contentDiv.innerHTML='<div class="typing"><span></span><span></span><span></span></div>';
+    }else{
+      contentDiv.textContent=content;
+    }
+    bubble.appendChild(contentDiv);
+
+    // Metadata area
+    var metaDiv=document.createElement('div');
+    metaDiv.className='metadata';
+    bubble.appendChild(metaDiv);
+  }else{
+    var contentDiv=document.createElement('div');
+    contentDiv.className='content';
+    contentDiv.textContent=content;
+    bubble.appendChild(contentDiv);
+  }
+
+  msgDiv.appendChild(bubble);
+  messagesEl.appendChild(msgDiv);
+  scrollBottom();
+  return msgDiv;
+}
+
+/* ===== Sources UI ===== */
+function buildSourcesUI(sources, container){
+  if(!sources||sources.length===0) return;
+  // Clear any previous content
+  container.innerHTML='';
+
+  var toggle=document.createElement('span');
+  toggle.className='sources-toggle';
+  toggle.textContent='查看来源 ('+sources.length+')';
+
+  var list=document.createElement('div');
+  list.className='sources-list';
+
+  sources.forEach(function(src){
+    var item=document.createElement('div');
+    item.className='source-item';
+
+    var docIdSpan=document.createElement('span');
+    docIdSpan.className='doc-id';
+    docIdSpan.textContent=src.doc_id||'——';
+
+    var scoreStr='——';
+    if(src.score!==undefined){
+      scoreStr=(src.score*100).toFixed(1)+'%';
+    }
+    var srcType=(src.sources&&src.sources.length)?src.sources.join(', '):'——';
+    var metaStr=scoreStr+' | '+srcType;
+
+    var scoreSpan=document.createElement('span');
+    scoreSpan.className='score';
+    scoreSpan.textContent=metaStr;
+
+    item.appendChild(docIdSpan);
+    item.appendChild(scoreSpan);
+    list.appendChild(item);
+  });
+
+  // Toggle logic
+  toggle.addEventListener('click',function(){
+    var expanded=list.classList.toggle('show');
+    toggle.classList.toggle('expanded',expanded);
+  });
+
+  container.appendChild(toggle);
+  container.appendChild(list);
+}
+
+/* ===== Metadata builder ===== */
+function setMetadata(metaDiv, data){
+  metaDiv.innerHTML='';
+  if(!data) return;
+
+  if(data.intent){
+    var t=document.createElement('span');
+    t.className='tag intent';
+    t.textContent=data.intent;
+    metaDiv.appendChild(t);
+  }
+  if(data.cache_hit){
+    var t=document.createElement('span');
+    t.className='tag cache';
+    t.textContent=data.cache_hit;
+    metaDiv.appendChild(t);
+  }
+  if(data.confidence!==undefined){
+    var t=document.createElement('span');
+    t.className='tag confidence';
+    t.textContent=(data.confidence*100).toFixed(0)+'%';
+    metaDiv.appendChild(t);
+  }
+}
+
+/* ===== SSE Event Handlers ===== */
+var SSEHandlers={
+  sources: function(event, msgEl){
+    if(!msgEl) return;
+    var sources=event.data||[];
+    if(sources.length===0) return;
+    var container=msgEl.querySelector('.sources-container');
+    buildSourcesUI(sources, container);
+  },
+
+  delta: function(event, msgEl){
+    if(!msgEl) return;
+    var contentDiv=msgEl.querySelector('.content');
+    if(!contentDiv) return;
+    // Remove typing indicator
+    var typing=contentDiv.querySelector('.typing');
+    if(typing) typing.remove();
+    contentDiv.textContent+=event.data||'';
+    scrollBottom();
+  },
+
+  done: function(event, msgEl){
+    if(!msgEl) return;
+    var data=event.data||{};
+
+    // Update session ID if backend assigned one
+    if(data.session_id){
+      state.sessionId=data.session_id;
+      localStorage.setItem('chat_session_id', state.sessionId);
+    }
+
+    var bubble=msgEl.querySelector('.bubble');
+    var contentDiv=bubble.querySelector('.content');
+    var metaDiv=bubble.querySelector('.metadata');
+
+    // Remove typing if still present
+    var typing=contentDiv.querySelector('.typing');
+    if(typing) typing.remove();
+
+    // Set answer if content is empty (e.g. cached response with no streaming)
+    if(data.answer && !contentDiv.textContent.trim()){
+      contentDiv.textContent=data.answer;
+    }
+
+    // Build sources from done event if not already shown via sources event
+    var srcContainer=bubble.querySelector('.sources-container');
+    if(data.sources&&data.sources.length>0 && !srcContainer.hasChildNodes()){
+      buildSourcesUI(data.sources, srcContainer);
+    }
+
+    // Show metadata
+    setMetadata(metaDiv, data);
+    scrollBottom();
+  }
+};
+
+/* ===== Stream ===== */
+async function streamResponse(message){
+  state.isStreaming=true;
+  sendBtn.disabled=true;
+
+  // Create assistant message placeholder
+  state.pendingMsgEl=addMessage('assistant', '', true);
+
+  var url='/api/v1/'+encodeURIComponent(state.tenant)+'/chat/stream'+
+    '?session_id='+encodeURIComponent(state.sessionId)+
+    '&message='+encodeURIComponent(message);
+
+  try{
+    var response=await fetch(url);
+
+    if(!response.ok){
+      var errMsg='请求失败 ('+response.status+')';
+      try{
+        var errBody=await response.json();
+        errMsg=errBody.error&&errBody.error.message?errBody.error.message:
+               errBody.message||errMsg;
+      }catch(e){/* ignore parse error */}
+      throw new Error(errMsg);
+    }
+
+    if(!response.body){
+      throw new Error('服务器未返回流数据');
+    }
+
+    var reader=response.body.getReader();
+    var decoder=new TextDecoder();
+    var buffer='';
+
+    while(true){
+      var result=await reader.read();
+      if(result.done) break;
+
+      buffer+=decoder.decode(result.value,{stream:true});
+      var parts=buffer.split('\n\n');
+      buffer=parts.pop()||'';
+
+      for(var i=0;i<parts.length;i++){
+        var part=parts[i].trim();
+        if(!part) continue;
+
+        if(part.startsWith('data: ')){
+          var jsonStr=part.slice(6);
+          try{
+            var parsed=JSON.parse(jsonStr);
+            var handler=SSEHandlers[parsed.type];
+            if(handler){
+              handler(parsed, state.pendingMsgEl);
+            }else{
+              console.warn('Unknown SSE event type:', parsed.type);
+            }
+          }catch(parseErr){
+            console.warn('SSE parse error:', parseErr, jsonStr);
+          }
+        }
+      }
+    }
+
+    // Process any remaining buffer (trailing data without \n\n)
+    var trailing=buffer.trim();
+    if(trailing.startsWith('data: ')){
+      try{
+        var parsed=JSON.parse(trailing.slice(6));
+        var handler=SSEHandlers[parsed.type];
+        if(handler) handler(parsed, state.pendingMsgEl);
+      }catch(e){/* ignore */}
+    }
+
+  }catch(err){
+    console.error('Stream error:', err);
+
+    if(state.pendingMsgEl){
+      var bubble=state.pendingMsgEl.querySelector('.bubble');
+      var contentDiv=bubble.querySelector('.content');
+      // Remove typing indicator
+      var typing=contentDiv.querySelector('.typing');
+      if(typing) typing.remove();
+      // Show error
+      contentDiv.textContent='发送失败，请重试';
+      bubble.classList.add('error');
+      // Clean up empty sources container
+      var srcContainer=bubble.querySelector('.sources-container');
+      if(srcContainer&&!srcContainer.hasChildNodes()){
+        srcContainer.remove();
+      }
+    }
+  }finally{
+    state.isStreaming=false;
+    sendBtn.disabled=false;
+    state.pendingMsgEl=null;
+    inputEl.focus();
+    scrollBottom();
+  }
+}
+
+/* ===== Send ===== */
+function sendMessage(){
+  var text=inputEl.value.trim();
+  if(!text||state.isStreaming) return;
+
+  inputEl.value='';
+  inputEl.style.height='auto';
+
+  addMessage('user', text);
+  streamResponse(text);
+}
+
+/* ===== Event Listeners ===== */
+
+// Auto-resize textarea
+inputEl.addEventListener('input', function(){
+  inputEl.style.height='auto';
+  inputEl.style.height=Math.min(inputEl.scrollHeight, 120)+'px';
+  // Enable send button only when there's content and not streaming
+  sendBtn.disabled=!inputEl.value.trim()||state.isStreaming;
+});
+
+// Enter to send, Shift+Enter for newline
+inputEl.addEventListener('keydown', function(e){
+  if(e.key==='Enter'&&!e.shiftKey){
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+// Send button
+sendBtn.addEventListener('click', sendMessage);
+
+// Focus input on load
+inputEl.focus();
+
+})();
+</script>
+</body>
 </html>

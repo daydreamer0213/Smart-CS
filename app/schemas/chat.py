@@ -15,3 +15,4 @@ class ChatResponse(BaseModel):
     sources: list[dict]  # [{"question": "...", "answer": "...", "score": 0.95}, ...]
     cache_hit: str  # "L1" | "L2" | "miss"
     session_id: str
+    handoff: bool = False   # True if agent called handoff_to_human

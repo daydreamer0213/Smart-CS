@@ -1,4 +1,8 @@
-"""Chat pipeline orchestrator."""
+"""Chat pipeline — now driven by the LangGraph agent.
+
+The non-streaming ``process_chat`` and streaming ``process_chat_stream``
+both check L1/L2 cache first, then delegate to the agent graph.
+"""
 
 import json
 import time
@@ -7,63 +11,30 @@ import structlog
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core.intent.classifier import classify_intent
-from app.core.llm.client import LLMClient
-from app.core.llm.prompts import HANDOFF_MESSAGE, build_system_prompt, response_prompt
+from app.core.agent.graph import build_agent_graph
+from app.core.agent.state import AgentState
+from app.core.cache.exact import ExactCache
+from app.core.cache.semantic import SemanticCache
+from app.core.embedding import get_embedding_provider as emb_factory
+from app.core.llm.prompts import HANDOFF_MESSAGE, build_agent_system_prompt
 from app.core.retrieval_module import (
-    get_bm25_manager,
     get_embedding_provider,
     get_l1_cache,
     get_l2_cache,
-    get_vector_store,
 )
-from app.core.retrieval.fusion import rrf_fusion
 from app.models.tenant import Tenant
 from app.schemas.chat import ChatResponse
 
 logger = structlog.get_logger()
 
-_llm_client: LLMClient | None = None
+_agent_graph = None
 
 
-def _get_llm() -> LLMClient:
-    global _llm_client
-    if _llm_client is None:
-        _llm_client = LLMClient(
-            api_key=settings.llm_api_key,
-            base_url=settings.llm_base_url,
-            model=settings.llm_model,
-        )
-    return _llm_client
-
-
-async def _retrieve(tenant_slug: str, query: str, db) -> list[dict]:
-    vs = get_vector_store()
-    bm = get_bm25_manager()
-    emb = get_embedding_provider()
-
-    query_vec = (await emb.embed([query]))[0]
-    vector_results = vs.search(tenant_slug, query_vec, top_k=5)
-    bm25_results = bm.search(tenant_slug, query, top_k=5)
-
-    fused = rrf_fusion(vector_results, bm25_results, top_k=5)
-
-    # Enrich with actual question/answer from database
-    from app.models.knowledge import KnowledgeItem
-    doc_ids = [r["doc_id"] for r in fused]
-    items = db.query(KnowledgeItem).filter(KnowledgeItem.id.in_(doc_ids)).all() if doc_ids else []
-    item_map = {item.id: item for item in items}
-
-    return [
-        {
-            "doc_id": r["doc_id"],
-            "score": r["score"],
-            "sources": r["sources"],
-            "question": item_map[r["doc_id"]].question if r["doc_id"] in item_map else "",
-            "answer": item_map[r["doc_id"]].answer if r["doc_id"] in item_map else "",
-        }
-        for r in fused
-    ]
+def _get_graph():
+    global _agent_graph
+    if _agent_graph is None:
+        _agent_graph = build_agent_graph()
+    return _agent_graph
 
 
 async def process_chat(
@@ -72,9 +43,10 @@ async def process_chat(
     session_id: str,
     message: str,
 ) -> ChatResponse:
+    """Non-streaming chat — cache check then agent invocation."""
     t0 = time.monotonic()
 
-    # ---- Step 0: L1 exact-match cache ----
+    # Fast path: L1 exact cache
     l1 = get_l1_cache()
     if l1:
         cached = l1.get(tenant.id, message)
@@ -82,15 +54,11 @@ async def process_chat(
             elapsed_ms = (time.monotonic() - t0) * 1000
             logger.info("chat_cache_hit", cache_hit="L1", latency_ms=round(elapsed_ms, 2))
             return ChatResponse(
-                answer=cached,
-                intent="faq",
-                confidence=1.0,
-                sources=[],
-                cache_hit="L1",
-                session_id=session_id,
+                answer=cached, intent="faq", confidence=1.0,
+                sources=[], cache_hit="L1", session_id=session_id,
             )
 
-    # ---- Step 0.5: L2 semantic cache ----
+    # Fast path: L2 semantic cache
     emb = get_embedding_provider()
     query_emb = (await emb.embed([message]))[0]
 
@@ -99,98 +67,109 @@ async def process_chat(
         cached = l2.get(tenant.id, query_emb, threshold=settings.l2_cache_threshold)
         if cached:
             if l1:
-                l1.set(tenant.id, message, cached)  # promote to L1
+                l1.set(tenant.id, message, cached)
             elapsed_ms = (time.monotonic() - t0) * 1000
             logger.info("chat_cache_hit", cache_hit="L2", latency_ms=round(elapsed_ms, 2))
             return ChatResponse(
-                answer=cached,
-                intent="faq",
-                confidence=1.0,
-                sources=[],
-                cache_hit="L2",
-                session_id=session_id,
+                answer=cached, intent="faq", confidence=1.0,
+                sources=[], cache_hit="L2", session_id=session_id,
             )
 
-    # Step 1: Hybrid retrieval
-    retrieval_results = await _retrieve(tenant.slug, message, db)
+    # Agent path
+    return await _run_agent(tenant, db, session_id, message, query_emb, t0)
 
-    # Step 2: Intent classification
+
+async def _run_agent(
+    tenant: Tenant,
+    db: Session,
+    session_id: str,
+    message: str,
+    query_emb: list[float],
+    t0: float,
+) -> ChatResponse:
+    """Invoke the agent graph and build a ChatResponse from its final state."""
     tenant_config = tenant.config_json or {}
-    intent, source, confidence = await classify_intent(
-        user_input=message,
-        human_keywords=tenant_config.get("human_keywords", []),
-        retrieval_results=retrieval_results,
-        llm_client=_get_llm(),
-        confidence_threshold=tenant_config.get("intent_threshold_override") or settings.intent_confidence_threshold,
-    )
-
-    # Step 3: Human handoff
-    if intent == "human":
-        return ChatResponse(
-            answer=HANDOFF_MESSAGE,
-            intent="human",
-            confidence=confidence,
-            sources=[],
-            cache_hit="miss",
-            session_id=session_id,
-        )
-
-    # Step 4: LLM generation
-    llm = _get_llm()
-    system_prompt = build_system_prompt(
+    system_prompt = build_agent_system_prompt(
         tenant.name,
         tenant_config.get("system_prompt_append", ""),
     )
-    prompt = response_prompt(intent, retrieval_results[:3], [], message)
-    answer = await llm.chat([
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": prompt},
-    ])
 
-    # ---- Step 5: Write to caches ----
-    if l1:
-        l1.set(tenant.id, message, answer)
-    if l2:
-        l2.set(tenant.id, query_emb, answer)
+    graph = _get_graph()
+    config = {"configurable": {"thread_id": session_id}}
 
-    elapsed = (time.monotonic() - t0) * 1000
-    logger.info(
-        "chat_completed",
-        intent=intent,
-        source=source,
-        results=len(retrieval_results),
-        latency_ms=round(elapsed, 2),
-    )
+    # Inject runtime context for tools (tenant_slug, db)
+    from app.core.agent.tools import set_runtime as set_tool_runtime
+    set_tool_runtime(tenant.slug, db)
 
-    # ---- Step 6: Persist conversation and message ----
-    from app.models.conversation import Conversation, Message
+    initial_state: AgentState = {
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": message},
+        ],
+        "tenant_id": tenant.id,
+        "session_id": session_id,
+        "handoff": False,
+    }
+
+    final_state = await graph.ainvoke(initial_state, config)
+
+    messages = final_state.get("messages", [])
+    answer = ""
+    last_ai = None
+    for m in reversed(messages):
+        if hasattr(m, "type") and m.type == "ai" and m.content:
+            last_ai = m
+            answer = m.content
+            break
+        elif isinstance(m, dict) and m.get("role") == "assistant" and m.get("content"):
+            answer = m["content"]
+            break
+
+    from app.core.agent.tools import is_handoff_triggered
+    handoff = is_handoff_triggered()
+
+    # Persist conversation
+    from app.models.conversation import Conversation, Message as MsgModel
 
     conv = db.query(Conversation).filter(
         Conversation.tenant_id == tenant.id,
         Conversation.session_id == session_id,
     ).first()
     if conv:
-        conv.message_count += 1
+        conv.message_count = (conv.message_count or 0) + 1
+        if handoff:
+            conv.status = "handed_off"
     else:
-        conv = Conversation(tenant_id=tenant.id, session_id=session_id)
+        conv = Conversation(
+            tenant_id=tenant.id, session_id=session_id,
+            status="handed_off" if handoff else "active",
+        )
         db.add(conv)
         db.flush()
 
-    msg = Message(
-        conversation_id=conv.id,
-        role="user",
-        content=message,
-        intent=intent,
-    )
-    db.add(msg)
+    db.add(MsgModel(conversation_id=conv.id, role="user", content=message))
+    db.add(MsgModel(conversation_id=conv.id, role="assistant", content=answer))
+    db.commit()
+
+    # Write to caches
+    l1 = get_l1_cache()
+    l2 = get_l2_cache()
+    if l1 and answer:
+        l1.set(tenant.id, message, answer)
+    if l2 and answer and query_emb:
+        l2.set(tenant.id, query_emb, answer)
+
+    elapsed = (time.monotonic() - t0) * 1000
+    logger.info("agent_completed", latency_ms=round(elapsed, 2), handoff=handoff)
 
     return ChatResponse(
         answer=answer,
-        intent=intent,
-        confidence=confidence,
-        sources=retrieval_results[:3],
+        intent="human" if handoff else "faq",
+        confidence=1.0,
+        sources=[],
         cache_hit="miss",
         session_id=session_id,
+        handoff=handoff,
     )
 
 
@@ -200,30 +179,20 @@ async def process_chat_stream(
     session_id: str,
     message: str,
 ):
-    """Chat pipeline that yields SSE events.
-
-    Mirrors ``process_chat`` but streams LLM tokens as ``delta`` SSE
-    events and emits ``sources`` / ``done`` events so the client can
-    progressively render the response.
-
-    Event types yielded:
-        sources -- hybrid retrieval results
-        delta   -- incremental LLM content token
-        done    -- final ChatResponse dict (or cached answer / handoff)
-    """
+    """Streaming chat — yields SSE events via LangGraph astream_events."""
     t0 = time.monotonic()
 
-    # ---- Step 0: L1 exact-match cache ----
+    # Fast path: L1 exact cache
     l1 = get_l1_cache()
     if l1:
         cached = l1.get(tenant.id, message)
         if cached:
             elapsed_ms = (time.monotonic() - t0) * 1000
             logger.info("chat_stream_cache_hit", cache_hit="L1", latency_ms=round(elapsed_ms, 2))
-            yield f"data: {json.dumps({'type': 'done', 'data': {'answer': cached, 'intent': 'faq', 'confidence': 1.0, 'sources': [], 'cache_hit': 'L1', 'session_id': session_id}})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'data': {'answer': cached, 'intent': 'faq', 'confidence': 1.0, 'sources': [], 'cache_hit': 'L1', 'session_id': session_id, 'handoff': False}})}\n\n"
             return
 
-    # ---- Step 0.5: L2 semantic cache ----
+    # Fast path: L2 semantic cache
     emb = get_embedding_provider()
     query_emb = (await emb.embed([message]))[0]
 
@@ -232,86 +201,95 @@ async def process_chat_stream(
         cached = l2.get(tenant.id, query_emb, threshold=settings.l2_cache_threshold)
         if cached:
             if l1:
-                l1.set(tenant.id, message, cached)  # promote to L1
+                l1.set(tenant.id, message, cached)
             elapsed_ms = (time.monotonic() - t0) * 1000
             logger.info("chat_stream_cache_hit", cache_hit="L2", latency_ms=round(elapsed_ms, 2))
-            yield f"data: {json.dumps({'type': 'done', 'data': {'answer': cached, 'intent': 'faq', 'confidence': 1.0, 'sources': [], 'cache_hit': 'L2', 'session_id': session_id}})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'data': {'answer': cached, 'intent': 'faq', 'confidence': 1.0, 'sources': [], 'cache_hit': 'L2', 'session_id': session_id, 'handoff': False}})}\n\n"
             return
 
-    # Step 1: Hybrid retrieval
-    retrieval_results = await _retrieve(tenant.slug, message, db)
-
-    # Step 2: Intent classification
+    # Agent path with streaming
     tenant_config = tenant.config_json or {}
-    intent, source, confidence = await classify_intent(
-        user_input=message,
-        human_keywords=tenant_config.get("human_keywords", []),
-        retrieval_results=retrieval_results,
-        llm_client=_get_llm(),
-        confidence_threshold=tenant_config.get("intent_threshold_override") or settings.intent_confidence_threshold,
-    )
-
-    # Step 3: Human handoff
-    if intent == "human":
-        yield f"data: {json.dumps({'type': 'done', 'data': {'answer': HANDOFF_MESSAGE, 'intent': 'human', 'confidence': confidence, 'sources': [], 'cache_hit': 'miss', 'session_id': session_id}})}\n\n"
-        return
-
-    # Step 4: Build LLM prompts
-    llm = _get_llm()
-    system_prompt = build_system_prompt(
+    system_prompt = build_agent_system_prompt(
         tenant.name,
         tenant_config.get("system_prompt_append", ""),
     )
-    prompt = response_prompt(intent, retrieval_results[:3], [], message)
 
-    # Yield sources event before streaming starts
-    yield f"data: {json.dumps({'type': 'sources', 'data': retrieval_results[:3]})}\n\n"
+    # Inject runtime context for tools
+    from app.core.agent.tools import set_runtime as set_tool_runtime
+    set_tool_runtime(tenant.slug, db)
 
-    # Step 5: Stream LLM tokens
+    graph = _get_graph()
+    config = {"configurable": {"thread_id": session_id}}
+
+    initial_state: AgentState = {
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": message},
+        ],
+        "tenant_id": tenant.id,
+        "session_id": session_id,
+        "handoff": False,
+    }
+
     full_answer = ""
-    async for token in llm.chat_stream([
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": prompt},
-    ]):
-        full_answer += token
-        yield f"data: {json.dumps({'type': 'delta', 'data': token})}\n\n"
+    handoff = False
 
-    # ---- Step 6: Write to caches ----
-    if l1:
-        l1.set(tenant.id, message, full_answer)
-    if l2:
-        l2.set(tenant.id, query_emb, full_answer)
+    async for event in graph.astream_events(initial_state, config, version="v2"):
+        kind = event.get("event", "")
 
-    elapsed = (time.monotonic() - t0) * 1000
-    logger.info(
-        "chat_stream_completed",
-        intent=intent,
-        source=source,
-        results=len(retrieval_results),
-        latency_ms=round(elapsed, 2),
-    )
+        if kind == "on_chat_model_stream":
+            chunk = event.get("data", {}).get("chunk")
+            if chunk and chunk.content:
+                full_answer += chunk.content
+                yield f"data: {json.dumps({'type': 'delta', 'data': chunk.content})}\n\n"
 
-    # ---- Step 7: Persist conversation and message ----
-    from app.models.conversation import Conversation, Message
+        elif kind == "on_tool_start":
+            tool_name = event.get("name", "")
+            yield f"data: {json.dumps({'type': 'tool_start', 'data': {'tool': tool_name}})}\n\n"
+            if tool_name == "handoff_to_human":
+                handoff = True
+
+        elif kind == "on_tool_end":
+            tool_name = event.get("name", "")
+            tool_output = event.get("data", {}).get("output", "")
+            if tool_name == "search_knowledge":
+                try:
+                    parsed = json.loads(str(tool_output))
+                    sources_data = parsed.get("results", [])
+                except (json.JSONDecodeError, TypeError):
+                    sources_data = []
+                yield f"data: {json.dumps({'type': 'sources', 'data': sources_data})}\n\n"
+
+    # Persist conversation
+    from app.models.conversation import Conversation, Message as MsgModel
 
     conv = db.query(Conversation).filter(
         Conversation.tenant_id == tenant.id,
         Conversation.session_id == session_id,
     ).first()
     if conv:
-        conv.message_count += 1
+        conv.message_count = (conv.message_count or 0) + 1
+        if handoff:
+            conv.status = "handed_off"
     else:
-        conv = Conversation(tenant_id=tenant.id, session_id=session_id)
+        conv = Conversation(
+            tenant_id=tenant.id, session_id=session_id,
+            status="handed_off" if handoff else "active",
+        )
         db.add(conv)
         db.flush()
 
-    msg = Message(
-        conversation_id=conv.id,
-        role="user",
-        content=message,
-        intent=intent,
-    )
-    db.add(msg)
+    db.add(MsgModel(conversation_id=conv.id, role="user", content=message))
+    db.add(MsgModel(conversation_id=conv.id, role="assistant", content=full_answer))
+    db.commit()
 
-    # Yield done event with final ChatResponse data
-    yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'intent': intent, 'confidence': confidence, 'sources': retrieval_results[:3], 'cache_hit': 'miss', 'session_id': session_id}})}\n\n"
+    # Write to caches
+    if l1 and full_answer:
+        l1.set(tenant.id, message, full_answer)
+    if l2 and full_answer and query_emb:
+        l2.set(tenant.id, query_emb, full_answer)
+
+    elapsed = (time.monotonic() - t0) * 1000
+    logger.info("agent_stream_completed", latency_ms=round(elapsed, 2), handoff=handoff)
+
+    yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'intent': 'human' if handoff else 'faq', 'confidence': 1.0, 'sources': [], 'cache_hit': 'miss', 'session_id': session_id, 'handoff': handoff}})}\n\n"

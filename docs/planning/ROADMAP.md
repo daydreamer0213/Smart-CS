@@ -4,14 +4,17 @@
 **Started:** 2026-06-24
 **Goal:** 补全商户接入必需功能，从"能用"到"好用"
 
-### Phase 1.1: 文档导入 [status: active]
+### Phase 1.1: 文档导入 [status: done]
 **Goal:** 支持上传 PDF/Word，自动解析→分块→嵌入→入库
 **Surface:** Backend
 **Plan:** `docs/superpowers/plans/YYYY-MM-DD-doc-import.md`
 
-### Phase 1.2: JWT 认证 [status: pending]
+### Phase 1.2: JWT 认证 [status: active]
 **Goal:** 替换 API Key 为 JWT，加用户注册/登录
 **Surface:** Backend
+**Spec:** `docs/superpowers/specs/2026-06-24-jwt-auth-design.md`
+**Plan:** `docs/superpowers/plans/2026-06-24-jwt-auth-plan.md`
+**Progress:** 设计 + 计划完成，待实现（10 tasks）
 
 ### Phase 1.3: 租户自助注册 [status: pending]
 **Goal:** 注册页面 + 自动创建 ChromaDB collection + 初始化租户配置

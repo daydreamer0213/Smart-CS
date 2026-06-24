@@ -26,11 +26,14 @@
 
 Roadmap 见 `docs/planning/ROADMAP.md`：
 - ✅ Phase 1.1 文档导入 — 已完成
-- ⏳ Phase 1.2 JWT 认证 — 待开发
+- 🔧 Phase 1.2 JWT 认证 — 设计中，待实现
+  - ✅ Spec: `docs/superpowers/specs/2026-06-24-jwt-auth-design.md`
+  - ✅ Plan: `docs/superpowers/plans/2026-06-24-jwt-auth-plan.md` (10 tasks)
+  - ⏳ 实现: 待启动
 - ⏳ Phase 1.3 租户自助注册 — 待开发
 - ⏳ Milestone 2 运维增强 — 待开发
 
-**下一任务：Phase 1.2 JWT 认证**（替换 API Key，加用户注册/登录）
+**下一任务：执行 Phase 1.2 JWT 认证实现计划**（10 tasks，subagent-driven）
 
 ## 强制流程（重要！）
 

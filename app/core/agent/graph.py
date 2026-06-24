@@ -4,11 +4,9 @@ Nodes: agent (LLM + tool definitions) → tools (ToolNode) → agent (loop)
 The graph terminates when the LLM produces a response without tool_calls.
 """
 
-import sqlite3
-
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.memory import MemorySaver
 from langchain_openai import ChatOpenAI
 
 from app.config import settings
@@ -44,10 +42,11 @@ def _should_continue(state: AgentState) -> str:
 
 
 def build_agent_graph():
-    """Build and return a compiled LangGraph agent with SQLite checkpointing.
+    """Build and return a compiled LangGraph agent with in-memory checkpointing.
 
     Returns a compiled graph.  Callers use ``graph.astream_events(...)``
     for SSE streaming or ``graph.ainvoke(...)`` for non-streaming execution.
+    Conversation persistence is handled by the SQL database in chat_service.py.
     """
     llm = _build_llm()
 
@@ -66,10 +65,7 @@ def build_agent_graph():
     graph.add_conditional_edges("agent", _should_continue, {"tools": "tools", END: END})
     graph.add_edge("tools", "agent")
 
-    # SQLite checkpoint for persistent conversation state.
-    # SqliteSaver.from_conn_string is a context manager (LangGraph >=1.2),
-    # so we create the sqlite3 connection ourselves to keep it alive.
-    db_path = settings.database_url.replace("sqlite:///", "")
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    checkpointer = SqliteSaver(conn)
+    # In-memory checkpointer that supports async natively.
+    # SqliteSaver does not support async methods (ainvoke/astream_events).
+    checkpointer = MemorySaver()
     return graph.compile(checkpointer=checkpointer)

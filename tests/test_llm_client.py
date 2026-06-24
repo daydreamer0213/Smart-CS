@@ -8,6 +8,7 @@ from app.core.llm.client import LLMClient
 
 
 class TestOutput(BaseModel):
+    __test__ = False   # Not a pytest test class
     result: str = Field(description="test result")
 
 

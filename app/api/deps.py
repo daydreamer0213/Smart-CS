@@ -1,13 +1,15 @@
 """FastAPI dependency injection — database session, tenant lookup, admin auth."""
 
-from fastapi import Header, HTTPException, Request
+from collections.abc import Generator
+
+from fastapi import HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
 from app.models.tenant import AdminApiKey, Tenant
 
 
-def get_db():
+def get_db() -> Generator[Session, None, None]:
     """Yield a SQLAlchemy session, closing it after the request."""
     db = SessionLocal()
     try:

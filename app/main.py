@@ -4,6 +4,7 @@ Usage:
     uvicorn app.main:app --reload
 """
 
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.api.admin.analytics import router as admin_analytics_router
+from app.api.admin.auth import router as admin_auth_router
 from app.api.admin.knowledge import router as admin_knowledge_router
 from app.api.chat import router as chat_router
 from app.api.health import router as health_router
@@ -37,21 +39,27 @@ async def lifespan(_app: FastAPI):
     db = SessionLocal()
     try:
         if db.query(Tenant).count() == 0:
-            db.add(
-                Tenant(
-                    slug="demo",
-                    name="DemoStore",
-                    config_json={
-                        "human_keywords": ["人工", "客服", "经理", "投诉"],
-                        "system_prompt_append": "",
-                        "model_override": None,
-                        "cache_ttl_override": None,
-                        "intent_threshold_override": None,
-                        "handoff_enabled": True,
-                    },
-                    is_active=True,
+            seed_path = _PROJECT_ROOT / "data" / "seed" / "tenant_sample.json"
+            if seed_path.exists():
+                with open(seed_path, encoding="utf-8") as f:
+                    seed_data = json.load(f)
+                db.add(Tenant(**seed_data))
+            else:
+                db.add(
+                    Tenant(
+                        slug="demo",
+                        name="DemoStore",
+                        config_json={
+                            "human_keywords": ["人工", "客服", "经理", "投诉"],
+                            "system_prompt_append": "",
+                            "model_override": None,
+                            "cache_ttl_override": None,
+                            "intent_threshold_override": None,
+                            "handoff_enabled": True,
+                        },
+                        is_active=True,
+                    )
                 )
-            )
             db.commit()
     finally:
         db.close()
@@ -80,6 +88,7 @@ def create_app() -> FastAPI:
     # 3. Include API routers
     app.include_router(health_router)
     app.include_router(chat_router)
+    app.include_router(admin_auth_router)
     app.include_router(admin_knowledge_router)
     app.include_router(admin_analytics_router)
 

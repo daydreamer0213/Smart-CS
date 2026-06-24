@@ -10,12 +10,18 @@ from app.db import SessionLocal
 from app.middleware.logging import request_id_var
 from app.models.tenant import Tenant
 
-TENANT_PATH_RE = re.compile(r"^/api/v\d+/([^/]+)")
+_CHAT_PATH_RE = re.compile(r"^/api/v\d+/([^/]+)/(?:chat|health)$")
+_ADMIN_PATH_RE = re.compile(r"^/api/v\d+/admin/([^/]+)/")
 
 
 def _extract_slug(path: str) -> str | None:
-    match = TENANT_PATH_RE.match(path)
-    return match.group(1) if match else None
+    match = _ADMIN_PATH_RE.match(path)
+    if match:
+        return match.group(1)
+    match = _CHAT_PATH_RE.match(path)
+    if match:
+        return match.group(1)
+    return None
 
 
 class TenantMiddleware(BaseHTTPMiddleware):

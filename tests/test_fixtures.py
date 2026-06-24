@@ -31,3 +31,11 @@ async def test_x_request_id_header(client):
     """Every response should carry an X-Request-ID header."""
     response = await client.get("/health")
     assert "x-request-id" in response.headers
+
+
+async def test_admin_route_extracts_correct_slug(client):
+    """Admin paths must not extract 'admin' as the tenant slug."""
+    response = await client.get("/api/v1/admin/demo/knowledge")
+    assert response.status_code == 200
+    data = response.json()
+    assert data == {"status": "not_implemented"}

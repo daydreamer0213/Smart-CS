@@ -29,7 +29,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Application lifespan — setup on start, teardown on shutdown."""
-    setup_structlog(settings.log_level)
+    setup_structlog(settings.log_level, settings.log_dir)
 
     # Import here to avoid circular imports at module level
     from app.db import SessionLocal, engine

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     max_conversation_turns: int = 10
     rate_limit_per_minute: int = 30
     log_level: str = "INFO"
+    log_dir: str = "logs"
 
 
 settings = Settings()

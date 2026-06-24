@@ -1,6 +1,5 @@
 """Structlog configuration and request-level logging middleware."""
 
-import os
 import time
 import uuid
 from contextvars import ContextVar
@@ -16,16 +15,15 @@ from starlette.responses import Response
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 
-_LOG_DIR = Path(os.getenv("LOG_DIR", "logs"))
-_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-
-def setup_structlog(log_level: str = "INFO") -> None:
+def setup_structlog(log_level: str = "INFO", log_dir: str = "logs") -> None:
     level = getattr(logging, log_level.upper(), logging.INFO)
+    log_path = Path(log_dir)
+    log_path.mkdir(parents=True, exist_ok=True)
 
     # JSON file handler for persistent structured logs
     file_handler = logging.handlers.RotatingFileHandler(
-        _LOG_DIR / "smartcs.jsonl",
+        log_path / "smartcs.jsonl",
         maxBytes=10 * 1024 * 1024,  # 10 MB
         backupCount=5,
         encoding="utf-8",

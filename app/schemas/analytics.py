@@ -8,6 +8,6 @@ trend data, and exported report formats.
 from pydantic import BaseModel
 
 
-class AnalyticsPlaceholder(BaseModel):
-    """Placeholder — remove once real analytics schemas are defined."""
+class DashboardStats(BaseModel):
+    """Placeholder for dashboard overview statistics."""
     pass

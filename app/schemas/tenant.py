@@ -8,6 +8,6 @@ and status/health response models.
 from pydantic import BaseModel
 
 
-class TenantPlaceholder(BaseModel):
-    """Placeholder — remove once real tenant schemas are defined."""
+class TenantResponse(BaseModel):
+    """Placeholder for tenant info response."""
     pass

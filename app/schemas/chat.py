@@ -7,6 +7,11 @@ including visitor_id, session_id, message content, and optional context.
 from pydantic import BaseModel
 
 
-class ChatPlaceholder(BaseModel):
-    """Placeholder — remove once real chat schemas are defined."""
+class ChatRequest(BaseModel):
+    """Placeholder for chat request schema."""
+    pass
+
+
+class ChatResponse(BaseModel):
+    """Placeholder for chat response schema."""
     pass

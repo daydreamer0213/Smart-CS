@@ -14,6 +14,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.admin.analytics import router as admin_analytics_router
 from app.api.admin.auth import router as admin_auth_router
+from app.api.admin.document import router as admin_document_router
 from app.api.admin.knowledge import router as admin_knowledge_router
 from app.api.chat import router as chat_router
 from app.api.health import router as health_router
@@ -166,6 +167,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(chat_router)
     app.include_router(admin_auth_router)
+    app.include_router(admin_document_router)
     app.include_router(admin_knowledge_router)
     app.include_router(admin_analytics_router)
 

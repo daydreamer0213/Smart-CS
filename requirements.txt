@@ -21,3 +21,8 @@ pytest-mock>=3.14.0
 prometheus-fastapi-instrumentator>=7.0.0
 tiktoken>=0.7.0
 sentence-transformers>=3.0.0
+# Document import (file parsing + chunking)
+PyMuPDF>=1.24.0
+python-docx>=1.1.0
+openpyxl>=3.1.0
+langchain-text-splitters>=0.3.0

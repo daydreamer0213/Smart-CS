@@ -1,20 +1,26 @@
-"""L1 exact-match cache — per-tenant, TTL-based expiration.
+"""L1 exact-match cache — per-tenant, TTL-based."""
 
-Phase 2 implementation: key = (tenant_id, normalized_question).
-Invalidated on knowledge update for that tenant.
-"""
+import time
 
 
-def get(tenant_id: str, question: str):
-    """Look up exact cache. Returns cached answer or None."""
-    raise NotImplementedError("Phase 2")
+class ExactCache:
+    def __init__(self):
+        self._store: dict[str, tuple[float, str]] = {}
 
+    def _key(self, tenant_id: str, question: str) -> str:
+        return f"{tenant_id}:{question.strip().lower()}"
 
-def set(tenant_id: str, question: str, answer: str, ttl: int = 300) -> None:
-    """Store exact cache entry with TTL."""
-    raise NotImplementedError("Phase 2")
+    def get(self, tenant_id: str, question: str) -> str | None:
+        entry = self._store.get(self._key(tenant_id, question))
+        if entry and time.time() < entry[0]:
+            return entry[1]
+        return None
 
+    def set(self, tenant_id: str, question: str, answer: str, ttl: int = 300):
+        self._store[self._key(tenant_id, question)] = (time.time() + ttl, answer)
 
-def invalidate(tenant_id: str) -> None:
-    """Clear all cache entries for a tenant (called on knowledge change)."""
-    raise NotImplementedError("Phase 2")
+    def invalidate(self, tenant_id: str):
+        prefix = f"{tenant_id}:"
+        keys = [k for k in self._store if k.startswith(prefix)]
+        for k in keys:
+            del self._store[k]

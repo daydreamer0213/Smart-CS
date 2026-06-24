@@ -53,7 +53,7 @@ async def chat_stream(
     tenant = request.state.tenant
     session_id = session_id or str(uuid.uuid4())
     return StreamingResponse(
-        process_chat_stream(db, tenant, session_id, message),
+        process_chat_stream(tenant, db, session_id, message),
         media_type="text/event-stream",
         headers={"X-Request-ID": str(uuid.uuid4())},
     )

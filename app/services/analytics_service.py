@@ -1,6 +1,6 @@
 """Analytics service — aggregate queries from conversations/messages."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
@@ -8,9 +8,14 @@ from sqlalchemy.orm import Session
 from app.models.conversation import Conversation, Message
 
 
+def _cutoff(days: int) -> datetime:
+    """Return a timezone-aware UTC datetime `days` days ago."""
+    return datetime.now(timezone.utc) - timedelta(days=days)
+
+
 def get_overview(db: Session, tenant_id: str, days: int = 7) -> dict:
     """Dashboard overview: conversation count, avg latency, cache hit rate, handoff rate."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = _cutoff(days)
     total = (
         db.query(Conversation)
         .filter(
@@ -69,7 +74,7 @@ def get_overview(db: Session, tenant_id: str, days: int = 7) -> dict:
 
 def get_intent_distribution(db: Session, tenant_id: str, days: int = 7) -> list[dict]:
     """Intent distribution for the given period."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = _cutoff(days)
     results = (
         db.query(Message.intent, func.count(Message.id))
         .join(Conversation)
@@ -86,7 +91,7 @@ def get_intent_distribution(db: Session, tenant_id: str, days: int = 7) -> list[
 
 def get_daily_trend(db: Session, tenant_id: str, days: int = 7) -> list[dict]:
     """Daily message trend with cache hit breakdown."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = _cutoff(days)
     results = (
         db.query(
             func.date(Message.created_at).label("date"),
@@ -114,7 +119,7 @@ def get_top_knowledge(
     db: Session, tenant_id: str, days: int = 7, limit: int = 10
 ) -> list[dict]:
     """Top-K knowledge items by query frequency."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = _cutoff(days)
     results = (
         db.query(
             Message.sources_json,

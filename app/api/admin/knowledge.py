@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 logger = structlog.get_logger()
 
 from app.api.admin.auth import verify_admin
+
+BATCH_MAX_SIZE = 500
 from app.api.deps import get_db, get_tenant
 from app.models.tenant import AdminApiKey, Tenant
 from app.schemas.knowledge import (
@@ -120,10 +122,22 @@ async def batch_import(
     tenant: Tenant = Depends(get_tenant),
     _admin: AdminApiKey = Depends(verify_admin),
 ):
+    if len(body) == 0:
+        return {"imported": 0, "items": []}
+    if len(body) > BATCH_MAX_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Batch size must be <= {BATCH_MAX_SIZE}, got {len(body)}",
+        )
     items = []
-    for data in body:
-        item = knowledge_service.create_knowledge(db, tenant.id, data, tenant_slug=tenant_slug)
-        items.append(_item_to_response(item))
+    try:
+        for data in body:
+            item = knowledge_service.create_knowledge(db, tenant.id, data, tenant_slug=tenant_slug)
+            items.append(_item_to_response(item))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     logger.info("admin_knowledge_batch_imported", tenant_slug=tenant_slug, count=len(items))
     return {"imported": len(items), "items": items}
 

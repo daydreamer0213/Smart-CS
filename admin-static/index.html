@@ -130,6 +130,20 @@ tbody tr:hover{background:#f5f9ff}
 /* ========== Loading ========== */
 .loading-dots::after{content:'';animation:dots 1.2s steps(4,end) infinite}
 @keyframes dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}100%{content:''}}
+/* ========== Documents Tab ========== */
+.upload-area{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.upload-area input[type=file]{flex:1;min-width:200px;padding:6px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px}
+.upload-area input[type=file]:focus{border-color:#1890ff;outline:none}
+.upload-status{margin-top:8px;font-size:13px}
+.doc-row{cursor:pointer}
+.doc-row:hover{background:#f5f9ff}
+.doc-row.expanded{background:#e6f7ff}
+.chunk-row td{background:#fafafa;border-bottom:1px dashed #e8e8e8}
+.chunk-header{display:flex;align-items:center;gap:8px;padding:6px 0;font-weight:600;color:#1890ff}
+.chunk-content{display:block;margin-top:4px;white-space:pre-wrap;word-break:break-word;max-height:120px;overflow-y:auto;font-size:12px;color:#555;background:#fff;border:1px solid #f0f0f0;border-radius:4px;padding:8px}
+.badge-success{background:#f6ffed;color:#52c41a}
+.badge-error{background:#fff2f0;color:#ff4d4f}
+.badge-processing{background:#e6f7ff;color:#1890ff}
 </style>
 </head>
 <body>
@@ -146,6 +160,10 @@ tbody tr:hover{background:#f5f9ff}
       <div class="nav-item" data-tab="analytics" onclick="switchTab('analytics')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
         <span>数据分析</span>
+      </div>
+      <div class="nav-item" data-tab="documents" onclick="switchTab('documents')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <span>文档管理</span>
       </div>
     </nav>
     <div class="sidebar-footer">v0.1.0</div>
@@ -258,6 +276,52 @@ tbody tr:hover{background:#f5f9ff}
         </div>
       </div>
 
+      <!-- ========== Documents Page ========== -->
+      <div id="page-documents" class="page">
+        <div class="card">
+          <div class="card-header"><span>上传文档</span></div>
+          <div class="card-body">
+            <div class="upload-area">
+              <input type="file" id="docFileInput" accept=".pdf,.docx,.xlsx,.txt,.md">
+              <button class="btn btn-primary" id="uploadDocBtn" onclick="uploadDocument()">上传</button>
+            </div>
+            <div class="help-text" style="margin-top:6px;">支持 PDF、Word、Excel、TXT、Markdown，单个文件最大 20MB</div>
+            <div class="upload-status" id="uploadStatus"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span>文档列表</span>
+            <button class="btn btn-sm" onclick="loadDocuments()">刷新</button>
+          </div>
+          <div class="card-body">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:24%">文件名</th>
+                    <th style="width:8%">类型</th>
+                    <th style="width:8%">大小</th>
+                    <th style="width:8%">分块数</th>
+                    <th style="width:10%">状态</th>
+                    <th style="width:14%">上传时间</th>
+                    <th style="width:10%">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="docTableBody">
+                  <tr><td colspan="7" style="text-align:center;color:#999;padding:40px;">加载中...</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination" id="docPagination" style="display:none">
+              <div class="pagination-info" id="docPaginationInfo"></div>
+              <div class="pagination-btns" id="docPaginationBtns"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /layout -->
@@ -352,6 +416,9 @@ const STATE = {
   knowledge: { items: [], total: 0, page: 1, pageSize: 10 },
   categories: [],
   analytics: null,
+  documents: { items: [], total: 0, page: 1, pageSize: 10 },
+  expandedDocId: null,
+  docChunks: {},
   confirmCallback: null
 };
 
@@ -382,6 +449,7 @@ function switchTab(tab) {
   document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
   document.getElementById('page-' + tab).classList.add('active');
   if (tab === 'analytics') loadAnalytics();
+  if (tab === 'documents') loadDocuments();
 }
 
 // ---------- API Helpers ----------
@@ -991,7 +1059,226 @@ window.addEventListener('resize', () => {
     drawIntentChart(STATE.analytics.intent_distribution);
     drawTrendChart(STATE.analytics.daily_trend);
   }
+  if (STATE.expandedDocId) {
+    STATE.expandedDocId = null;
+    renderDocumentTable();
+  }
 });
+
+// ===================================================================
+//  Documents Tab
+// ===================================================================
+
+async function loadDocuments() {
+  const tbody = document.getElementById('docTableBody');
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:30px;">加载中...</td></tr>';
+
+  const page = STATE.documents.page;
+  const size = STATE.documents.pageSize;
+  const query = `?page=${page}&page_size=${size}`;
+
+  try {
+    const data = await apiFetch('/documents' + query);
+    if (!data) throw new Error('empty response');
+
+    STATE.documents.items = data.items || [];
+    STATE.documents.total = data.total || 0;
+    STATE.expandedDocId = null;
+    STATE.docChunks = {};
+    renderDocumentTable();
+    renderDocPagination();
+  } catch (e) {
+    // Show empty state when API unavailable
+    STATE.documents.items = [];
+    STATE.documents.total = 0;
+    renderDocumentTable();
+    renderDocPagination();
+  }
+}
+
+function renderDocumentTable() {
+  const tbody = document.getElementById('docTableBody');
+  const items = STATE.documents.items;
+
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:40px;">暂无文档，请上传</td></tr>';
+    return;
+  }
+
+  let rows = '';
+  items.forEach(doc => {
+    const name = doc.filename || '';
+    const type = (doc.file_type || '').toUpperCase();
+    const size = formatFileSize(doc.file_size || 0);
+    const chunks = doc.chunk_count || 0;
+    const status = doc.status || 'unknown';
+    const statusBadge = status === 'completed' ? 'badge-success' : status === 'error' ? 'badge-error' : 'badge-processing';
+    const statusLabel = status === 'completed' ? '已完成' : status === 'error' ? '失败' : status === 'processing' ? '处理中' : status;
+    const created = doc.created_at ? formatTime(doc.created_at) : '--';
+    const expanded = STATE.expandedDocId === doc.id;
+
+    rows += `<tr class="doc-row${expanded ? ' expanded' : ''}" onclick="toggleDocChunks('${doc.id}')">
+      <td><span class="text-truncate" title="${name.replace(/"/g,'&quot;')}">${name.length > 40 ? name.slice(0,40)+'…' : name}</span></td>
+      <td><span class="badge badge-active">${type}</span></td>
+      <td>${size}</td>
+      <td>${chunks}</td>
+      <td><span class="badge ${statusBadge}">${statusLabel}</span></td>
+      <td class="text-muted" style="font-size:12px">${created}</td>
+      <td>
+        <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();openDocDeleteConfirm('${doc.id}')">删除</button>
+      </td>
+    </tr>`;
+
+    // Expanded chunk rows
+    if (expanded) {
+      const chunkList = STATE.docChunks[doc.id];
+      if (chunkList === undefined) {
+        rows += '<tr class="chunk-row"><td colspan="7" style="text-align:center;color:#999;padding:20px;">加载分块中...</td></tr>';
+      } else if (chunkList === null || chunkList.length === 0) {
+        rows += '<tr class="chunk-row"><td colspan="7" style="text-align:center;color:#999;padding:20px;">暂无分块数据</td></tr>';
+      } else {
+        chunkList.forEach(chunk => {
+          const content = chunk.content || '';
+          const preview = content.length > 300 ? content.slice(0, 300) + '…' : content;
+          rows += `<tr class="chunk-row">
+            <td colspan="7" style="padding:8px 12px 8px 40px;">
+              <div class="chunk-header">#${chunk.chunk_index} <span style="font-weight:400;font-size:12px;color:#999;">(${chunk.token_count} tokens)</span></div>
+              <div class="chunk-content">${preview.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}</div>
+            </td>
+          </tr>`;
+        });
+      }
+    }
+  });
+
+  tbody.innerHTML = rows;
+}
+
+function renderDocPagination() {
+  const wrap = document.getElementById('docPagination');
+  const info = document.getElementById('docPaginationInfo');
+  const btns = document.getElementById('docPaginationBtns');
+  const total = STATE.documents.total;
+  const page = STATE.documents.page;
+  const size = STATE.documents.pageSize;
+  const totalPages = Math.max(1, Math.ceil(total / size));
+
+  if (total <= size) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'flex';
+
+  info.textContent = `共 ${total} 条，第 ${page}/${totalPages} 页`;
+
+  let html = `<button onclick="goDocPage(${page-1})" ${page<=1?'disabled':''}>&lt;</button>`;
+  const start = Math.max(1, page-2);
+  const end = Math.min(totalPages, page+2);
+  if (start > 1) html += `<button onclick="goDocPage(1)">1</button>${start>2?'<button disabled>…</button>':''}`;
+  for (let i = start; i <= end; i++) {
+    html += `<button class="${i===page?'active':''}" onclick="goDocPage(${i})">${i}</button>`;
+  }
+  if (end < totalPages) html += `${end<totalPages-1?'<button disabled>…</button>':''}<button onclick="goDocPage(${totalPages})">${totalPages}</button>`;
+  html += `<button onclick="goDocPage(${page+1})" ${page>=totalPages?'disabled':''}>&gt;</button>`;
+  btns.innerHTML = html;
+}
+
+function goDocPage(p) {
+  if (p < 1 || p > Math.ceil(STATE.documents.total / STATE.documents.pageSize)) return;
+  STATE.documents.page = p;
+  loadDocuments();
+}
+
+async function uploadDocument() {
+  const fileInput = document.getElementById('docFileInput');
+  const file = fileInput.files[0];
+  if (!file) { showToast('请选择文件', 'error'); return; }
+
+  const maxSize = 20 * 1024 * 1024;
+  if (file.size > maxSize) { showToast('文件大小不能超过 20MB', 'error'); return; }
+
+  const { base } = apiBase();
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const btn = document.getElementById('uploadDocBtn');
+  btn.disabled = true;
+  btn.textContent = '上传中...';
+
+  const statusEl = document.getElementById('uploadStatus');
+  statusEl.innerHTML = '<span style="color:#1890ff;">正在上传...</span>';
+
+  try {
+    const res = await fetch(base + '/documents/upload', {
+      method: 'POST',
+      headers: { 'X-Admin-Key': STATE.apiKey || 'sk-placeholder' },
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error?.message || `上传失败 (${res.status})`);
+    }
+    const data = await res.json();
+    showToast(`上传成功: ${data.filename}（${data.chunk_count} 个分块）`, 'success');
+    statusEl.innerHTML = '<span style="color:#52c41a;">上传成功</span>';
+    fileInput.value = '';
+    loadDocuments();
+  } catch (e) {
+    showToast(e.message || '上传失败', 'error');
+    statusEl.innerHTML = `<span style="color:#ff4d4f;">${e.message || '上传失败'}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '上传';
+  }
+}
+
+async function toggleDocChunks(docId) {
+  if (STATE.expandedDocId === docId) {
+    STATE.expandedDocId = null;
+    renderDocumentTable();
+    return;
+  }
+  STATE.expandedDocId = docId;
+  // Fetch chunks if not yet cached
+  if (!(docId in STATE.docChunks)) {
+    renderDocumentTable(); // show loading
+    try {
+      const data = await apiFetch(`/documents/${docId}/chunks`);
+      STATE.docChunks[docId] = (data && data.chunks) ? data.chunks : [];
+    } catch (e) {
+      STATE.docChunks[docId] = null;
+    }
+  }
+  renderDocumentTable();
+}
+
+function openDocDeleteConfirm(docId) {
+  const item = STATE.documents.items.find(d => d.id === docId);
+  const name = item ? ((item.filename || '') + '').slice(0, 40) : '';
+  document.getElementById('confirmTitle').textContent = '确认删除文档';
+  document.getElementById('confirmMessage').textContent = name
+    ? `确定要删除文档「${name}」吗？此操作将同时删除所有关联的分块数据。`
+    : '确定要删除该文档吗？此操作将同时删除所有关联的分块数据。';
+  document.getElementById('confirmBtn').textContent = '删除';
+  STATE.confirmCallback = () => doDeleteDocument(docId);
+  document.getElementById('confirmDialog').classList.add('open');
+}
+
+async function doDeleteDocument(docId) {
+  closeConfirm();
+  try {
+    await apiFetch(`/documents/${docId}`, { method: 'DELETE' });
+    showToast('删除成功', 'success');
+  } catch (e) {
+    showToast('删除失败: ' + (e.message || '未知错误'), 'error');
+    return;
+  }
+  loadDocuments();
+}
+
+function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+}
 </script>
 </body>
 </html>

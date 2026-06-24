@@ -7,7 +7,9 @@
 ## 环境
 
 - conda 路径：D:\conda\Scripts\conda.exe
-- 环境名：smart-cs，Python 3.12
+- 环境名：smart-cs，Python: `D:/conda-envs/smart-cs/python.exe`
+- pip 缓存：`E:/smartcs-cache/pip/`（机械盘）
+- HuggingFace 缓存：`E:/smartcs-cache/huggingface/`（机械盘，BGE 模型下载位置）
 - LLM：DeepSeek API（OpenAI 兼容），base_url https://api.deepseek.com/v1
 - embedding：也用 DeepSeek API（注意：DeepSeek 无专用 embedding 模型，用 chat 模型生成 embedding 或后续切换到专用 embedding 服务）
 

@@ -13,4 +13,5 @@ services:
     volumes:
       - ./chroma_data:/app/chroma_data
       - ./smartcs.db:/app/smartcs.db
+      - ./logs:/app/logs
     restart: unless-stopped

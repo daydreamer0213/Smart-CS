@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.admin.analytics import router as admin_analytics_router
 from app.api.admin.auth import router as admin_auth_router
@@ -135,14 +136,21 @@ def create_app() -> FastAPI:
     app.add_middleware(RateLimitMiddleware, rpm=settings.rate_limit_per_minute)
     app.add_middleware(LoggingMiddleware)    # Added last   -> outermost (wraps everything)
 
-    # 3. Include API routers
+    # 3. Prometheus metrics — auto-instruments HTTP requests
+    instrumentator = Instrumentator(
+        should_group_status_codes=True,
+        should_ignore_untemplated=True,
+    )
+    instrumentator.instrument(app).expose(app, endpoint="/metrics", include_in_schema=True)
+
+    # 4. Include API routers
     app.include_router(health_router)
     app.include_router(chat_router)
     app.include_router(admin_auth_router)
     app.include_router(admin_knowledge_router)
     app.include_router(admin_analytics_router)
 
-    # 4. Mount static file directories (after routers so routes take priority)
+    # 5. Mount static file directories
     static_dir = _PROJECT_ROOT / "static"
     static_dir.mkdir(parents=True, exist_ok=True)
     app.mount(

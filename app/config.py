@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_base_url: str = "https://api.deepseek.com/v1"
     llm_model: str = "deepseek-chat"
-    embedding_model: str = "text-embedding-v2"
+    embedding_model: str = "text-embedding-v3"
     embedding_provider: str = "openai"
     embedding_api_key: str = ""
     embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"

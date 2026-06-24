@@ -50,46 +50,49 @@ async def search_knowledge(query: str) -> str:
     tenant_slug = ctx["tenant_slug"]
     db_session = ctx["db_session"]
 
-    vs = get_vector_store()
-    bm = get_bm25_manager()
-    emb = get_embedding_provider()
+    try:
+        vs = get_vector_store()
+        bm = get_bm25_manager()
+        emb = get_embedding_provider()
 
-    query_vec = (await emb.embed([query]))[0]
+        query_vec = (await emb.embed([query]))[0]
 
-    # Run vector and BM25 searches in parallel — they are independent
-    loop = asyncio.get_running_loop()
-    vector_results, bm25_results = await asyncio.gather(
-        loop.run_in_executor(None, vs.search, tenant_slug, query_vec, 5),
-        loop.run_in_executor(None, bm.search, tenant_slug, query, 5),
-    )
+        # Run vector and BM25 searches in parallel — they are independent
+        loop = asyncio.get_running_loop()
+        vector_results, bm25_results = await asyncio.gather(
+            loop.run_in_executor(None, vs.search, tenant_slug, query_vec, 5),
+            loop.run_in_executor(None, bm.search, tenant_slug, query, 5),
+        )
 
-    fused = rrf_fusion(vector_results, bm25_results, top_k=5)
+        fused = rrf_fusion(vector_results, bm25_results, top_k=5)
 
-    if not fused:
-        return json.dumps({"results": [], "message": "未找到相关知识条目"}, ensure_ascii=False)
+        if not fused:
+            return json.dumps({"results": [], "message": "未找到相关知识条目"}, ensure_ascii=False)
 
-    from app.models.knowledge import KnowledgeItem
+        from app.models.knowledge import KnowledgeItem
 
-    doc_ids = [r["doc_id"] for r in fused]
-    items = (
-        db_session.query(KnowledgeItem)
-        .filter(KnowledgeItem.id.in_(doc_ids))
-        .all()
-        if doc_ids
-        else []
-    )
-    item_map = {item.id: item for item in items}
+        doc_ids = [r["doc_id"] for r in fused]
+        items = (
+            db_session.query(KnowledgeItem)
+            .filter(KnowledgeItem.id.in_(doc_ids))
+            .all()
+            if doc_ids
+            else []
+        )
+        item_map = {item.id: item for item in items}
 
-    results = []
-    for r in fused:
-        item = item_map.get(r["doc_id"])
-        results.append({
-            "question": item.question if item else "",
-            "answer": item.answer if item else "",
-            "score": round(r["score"], 4),
-        })
+        results = []
+        for r in fused:
+            item = item_map.get(r["doc_id"])
+            results.append({
+                "question": item.question if item else "",
+                "answer": item.answer if item else "",
+                "score": round(r["score"], 4),
+            })
 
-    return json.dumps({"results": results}, ensure_ascii=False)
+        return json.dumps({"results": results}, ensure_ascii=False)
+    except Exception:
+        return json.dumps({"results": [], "message": "检索服务暂时不可用，请稍后重试"}, ensure_ascii=False)
 
 
 @tool

@@ -136,12 +136,6 @@ def _extract_answer(messages: list) -> str:
     return ""
 
 
-def _check_l2_cache(db_emb, tenant_id: str, message: str) -> tuple[str | None, list[float]]:
-    """Returns (cached_answer_or_None, query_embedding)."""
-    query_emb = db_emb.embed_sync_wrapper_called_via_await or None
-    return None, []
-
-
 async def _check_cache_and_embed(tenant_id: str, message: str) -> tuple[str | None, str, list[float]]:
     """Check L1, then L2 cache. Returns (answer_or_none, cache_hit_level, query_emb)."""
     l1 = get_l1_cache()

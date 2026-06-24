@@ -53,3 +53,19 @@ class LLMClient:
             content = completion.choices[0].message.content or "{}"
             return output_class.model_validate_json(content)
         return result
+
+    async def chat_stream(
+        self, messages: list[dict], temperature: float = 0.1, max_tokens: int = 1000
+    ):
+        """Stream chat tokens. Yields content deltas as they arrive."""
+        stream = await self._client.chat.completions.create(
+            model=self._model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+        async for chunk in stream:
+            delta = chunk.choices[0].delta
+            if delta.content:
+                yield delta.content

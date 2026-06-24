@@ -1,5 +1,6 @@
 """Chat pipeline orchestrator."""
 
+import json
 import time
 
 import structlog
@@ -186,3 +187,128 @@ async def process_chat(
         cache_hit="miss",
         session_id=session_id,
     )
+
+
+async def process_chat_stream(
+    tenant: Tenant,
+    db: Session,
+    session_id: str,
+    message: str,
+):
+    """Chat pipeline that yields SSE events.
+
+    Mirrors ``process_chat`` but streams LLM tokens as ``delta`` SSE
+    events and emits ``sources`` / ``done`` events so the client can
+    progressively render the response.
+
+    Event types yielded:
+        sources -- hybrid retrieval results
+        delta   -- incremental LLM content token
+        done    -- final ChatResponse dict (or cached answer / handoff)
+    """
+    t0 = time.monotonic()
+
+    # ---- Step 0: L1 exact-match cache ----
+    l1 = get_l1_cache()
+    if l1:
+        cached = l1.get(tenant.id, message)
+        if cached:
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            logger.info("chat_stream_cache_hit", cache_hit="L1", latency_ms=round(elapsed_ms, 2))
+            yield f"data: {json.dumps({'type': 'done', 'data': {'answer': cached, 'intent': 'faq', 'confidence': 1.0, 'sources': [], 'cache_hit': 'L1', 'session_id': session_id}})}\n\n"
+            return
+
+    # ---- Step 0.5: L2 semantic cache ----
+    emb = get_embedding_provider()
+    query_emb = (await emb.embed([message]))[0]
+
+    l2 = get_l2_cache()
+    if l2:
+        cached = l2.get(tenant.id, query_emb, threshold=settings.l2_cache_threshold)
+        if cached:
+            if l1:
+                l1.set(tenant.id, message, cached)  # promote to L1
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            logger.info("chat_stream_cache_hit", cache_hit="L2", latency_ms=round(elapsed_ms, 2))
+            yield f"data: {json.dumps({'type': 'done', 'data': {'answer': cached, 'intent': 'faq', 'confidence': 1.0, 'sources': [], 'cache_hit': 'L2', 'session_id': session_id}})}\n\n"
+            return
+
+    # Step 1: Hybrid retrieval
+    retrieval_results = await _retrieve(tenant.slug, message)
+
+    # Step 2: Intent classification
+    tenant_config = tenant.config_json or {}
+    intent, source, confidence = await classify_intent(
+        user_input=message,
+        human_keywords=tenant_config.get("human_keywords", []),
+        retrieval_results=retrieval_results,
+        llm_client=_get_llm(),
+        confidence_threshold=tenant_config.get(
+            "intent_threshold_override", settings.intent_confidence_threshold
+        ),
+    )
+
+    # Step 3: Human handoff
+    if intent == "human":
+        yield f"data: {json.dumps({'type': 'done', 'data': {'answer': HANDOFF_MESSAGE, 'intent': 'human', 'confidence': confidence, 'sources': [], 'cache_hit': 'miss', 'session_id': session_id}})}\n\n"
+        return
+
+    # Step 4: Build LLM prompts
+    llm = _get_llm()
+    system_prompt = build_system_prompt(
+        tenant.name,
+        tenant_config.get("system_prompt_append", ""),
+    )
+    prompt = response_prompt(intent, retrieval_results[:3], [], message)
+
+    # Yield sources event before streaming starts
+    yield f"data: {json.dumps({'type': 'sources', 'data': retrieval_results[:3]})}\n\n"
+
+    # Step 5: Stream LLM tokens
+    full_answer = ""
+    async for token in llm.chat_stream([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt},
+    ]):
+        full_answer += token
+        yield f"data: {json.dumps({'type': 'delta', 'data': token})}\n\n"
+
+    # ---- Step 6: Write to caches ----
+    if l1:
+        l1.set(tenant.id, message, full_answer)
+    if l2:
+        l2.set(tenant.id, query_emb, full_answer)
+
+    elapsed = (time.monotonic() - t0) * 1000
+    logger.info(
+        "chat_stream_completed",
+        intent=intent,
+        source=source,
+        results=len(retrieval_results),
+        latency_ms=round(elapsed, 2),
+    )
+
+    # ---- Step 7: Persist conversation and message ----
+    from app.models.conversation import Conversation, Message
+
+    conv = db.query(Conversation).filter(
+        Conversation.tenant_id == tenant.id,
+        Conversation.session_id == session_id,
+    ).first()
+    if conv:
+        conv.message_count += 1
+    else:
+        conv = Conversation(tenant_id=tenant.id, session_id=session_id)
+        db.add(conv)
+        db.flush()
+
+    msg = Message(
+        conversation_id=conv.id,
+        role="user",
+        content=message,
+        intent=intent,
+    )
+    db.add(msg)
+
+    # Yield done event with final ChatResponse data
+    yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'intent': intent, 'confidence': confidence, 'sources': retrieval_results[:3], 'cache_hit': 'miss', 'session_id': session_id}})}\n\n"

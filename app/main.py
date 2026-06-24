@@ -64,6 +64,47 @@ async def lifespan(_app: FastAPI):
     finally:
         db.close()
 
+    # ---- Initialize retrieval services ----
+    from app.core.retrieval_module import (
+        set_vector_store,
+        set_bm25_manager,
+        set_embedding_provider,
+    )
+    from app.core.retrieval.vector_store import VectorStore
+    from app.core.retrieval.bm25_index import BM25IndexManager
+    from app.core.embedding import get_embedding_provider as get_emb_provider
+    from app.models.knowledge import KnowledgeItem
+
+    vector_store = VectorStore(settings.chroma_persist_dir)
+    bm25_manager = BM25IndexManager()
+    embedding_provider = get_emb_provider(settings)
+
+    set_vector_store(vector_store)
+    set_bm25_manager(bm25_manager)
+    set_embedding_provider(embedding_provider)
+
+    # Build BM25 indices for all existing active tenants
+    db = SessionLocal()
+    try:
+        tenants = db.query(Tenant).filter(Tenant.is_active.is_(True)).all()
+        for tenant in tenants:
+            items = (
+                db.query(KnowledgeItem)
+                .filter(
+                    KnowledgeItem.tenant_id == tenant.id,
+                    KnowledgeItem.status == "active",
+                )
+                .all()
+            )
+            if items:
+                corpus = [
+                    (item.embedding_id or str(item.id), f"{item.question} {item.answer}")
+                    for item in items
+                ]
+                bm25_manager.build(tenant.slug, corpus)
+    finally:
+        db.close()
+
     yield
 
 

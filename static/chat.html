@@ -557,6 +557,32 @@ var SSEHandlers={
     // Show metadata
     setMetadata(metaDiv, data);
     scrollBottom();
+  },
+
+  tool_start: function(event, msgEl){
+    if(!msgEl) return;
+    var contentDiv=msgEl.querySelector('.content');
+    if(!contentDiv) return;
+    var typing=contentDiv.querySelector('.typing');
+    if(typing) typing.remove();
+    var toolName=event.data&&event.data.tool||'';
+    var label='处理中...';
+    if(toolName==='search_knowledge') label='正在搜索知识库...';
+    else if(toolName==='handoff_to_human') label='正在转接人工客服...';
+    contentDiv.textContent=label;
+    scrollBottom();
+  },
+
+  tool_end: function(event, msgEl){
+    if(!msgEl) return;
+    // Clear the placeholder text so delta can append cleanly
+    var contentDiv=msgEl.querySelector('.content');
+    if(!contentDiv) return;
+    var toolName=event.data&&event.data.tool||'';
+    if(toolName==='search_knowledge'){
+        contentDiv.textContent='';
+    }
+    scrollBottom();
   }
 };
 

@@ -24,5 +24,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_dir: str = "logs"
 
+    # Agent
+    agent_recursion_limit: int = 10
+    agent_timeout_seconds: int = 60
+    agent_stream_enabled: bool = True
 
 settings = Settings()

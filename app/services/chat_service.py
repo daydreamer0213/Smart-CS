@@ -1,8 +1,4 @@
-"""Chat pipeline — now driven by the LangGraph agent.
-
-The non-streaming ``process_chat`` and streaming ``process_chat_stream``
-check chitchat → L1/L2 cache → then delegate to the agent graph.
-"""
+"""Chat pipeline — LangGraph agent with chitchat / cache / streaming."""
 
 import json
 import time
@@ -13,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.agent.graph import build_agent_graph
 from app.core.agent.state import AgentState
-from app.core.agent.tools import is_handoff_triggered, set_runtime
+from app.core.agent.tools import handoff_to_human, is_handoff_triggered, search_knowledge, set_runtime
 from app.core.llm.prompts import build_agent_system_prompt
 from app.core.retrieval_module import (
     get_embedding_provider,
@@ -25,21 +21,24 @@ from app.schemas.chat import ChatResponse
 
 logger = structlog.get_logger()
 
+# ---- constants ----
+INTENT_FAQ = "faq"
+INTENT_HUMAN = "human"
+CACHE_L1 = "L1"
+CACHE_L2 = "L2"
+CACHE_MISS = "miss"
+SSE_DONE = "done"
+SSE_DELTA = "delta"
+SSE_SOURCES = "sources"
+SSE_TOOL_START = "tool_start"
+SSE_TOOL_END = "tool_end"
+
 # Simple greetings that don't need any API calls
 _CHITCHAT_PATTERNS = {
     "你好", "在吗", "在不在", "hi", "hello", "您好", "嗨",
     "早上好", "下午好", "晚上好", "早", "晚安", "再见", "拜拜",
     "谢谢", "多谢", "thanks", "thank you", "ok", "好的",
 }
-
-
-def _chitchat_reply(message: str, tenant_name: str) -> str | None:
-    """Return a canned reply for pure chitchat, or None if not chitchat."""
-    cleaned = message.strip().lower().rstrip("!！。.～~?？")
-    if cleaned in _CHITCHAT_PATTERNS or len(cleaned) <= 1:
-        return f"您好！我是{tenant_name}的智能客服，有什么可以帮助您的？"
-    return None
-
 
 _agent_graph = None
 
@@ -51,84 +50,29 @@ def _get_graph():
     return _agent_graph
 
 
-async def _emit_chitchat(tenant_name: str, session_id: str, msg: str):
-    """Yield a done SSE event for a chitchat reply."""
-    answer = _chitchat_reply(msg, tenant_name)
-    yield f"data: {json.dumps({'type': 'done', 'data': {'answer': answer, 'intent': 'faq', 'confidence': 1.0, 'sources': [], 'cache_hit': 'L1', 'session_id': session_id, 'handoff': False}})}\n\n"
+def _chitchat_reply(message: str, tenant_name: str) -> str | None:
+    """Return a canned reply for pure chitchat, or None if not chitchat."""
+    cleaned = message.strip().lower().rstrip("!！。.～~?？")
+    if cleaned in _CHITCHAT_PATTERNS or len(cleaned) <= 1:
+        return f"您好！我是{tenant_name}的智能客服，有什么可以帮助您的？"
+    return None
 
 
-async def process_chat(
-    tenant: Tenant,
-    db: Session,
-    session_id: str,
-    message: str,
-) -> ChatResponse:
-    """Non-streaming chat — chitchat → cache → agent."""
-    t0 = time.monotonic()
+# ---- shared helpers ----
 
-    # Fast path 0: chitchat — no API calls at all
-    cr = _chitchat_reply(message, tenant.name)
-    if cr:
-        return ChatResponse(
-            answer=cr, intent="faq", confidence=1.0,
-            sources=[], cache_hit="L1", session_id=session_id,
-        )
-
-    # Fast path 1: L1 exact cache
-    l1 = get_l1_cache()
-    if l1:
-        cached = l1.get(tenant.id, message)
-        if cached:
-            elapsed_ms = (time.monotonic() - t0) * 1000
-            logger.info("chat_cache_hit", cache_hit="L1", latency_ms=round(elapsed_ms, 2))
-            return ChatResponse(
-                answer=cached, intent="faq", confidence=1.0,
-                sources=[], cache_hit="L1", session_id=session_id,
-            )
-
-    # Fast path: L2 semantic cache
-    emb = get_embedding_provider()
-    query_emb = (await emb.embed([message]))[0]
-
-    l2 = get_l2_cache()
-    if l2:
-        cached = l2.get(tenant.id, query_emb, threshold=settings.l2_cache_threshold)
-        if cached:
-            if l1:
-                l1.set(tenant.id, message, cached)
-            elapsed_ms = (time.monotonic() - t0) * 1000
-            logger.info("chat_cache_hit", cache_hit="L2", latency_ms=round(elapsed_ms, 2))
-            return ChatResponse(
-                answer=cached, intent="faq", confidence=1.0,
-                sources=[], cache_hit="L2", session_id=session_id,
-            )
-
-    # Agent path
-    return await _run_agent(tenant, db, session_id, message, query_emb, t0)
+def _sse_event(evt_type: str, data: dict) -> str:
+    return f"data: {json.dumps({'type': evt_type, 'data': data})}\n\n"
 
 
-async def _run_agent(
-    tenant: Tenant,
-    db: Session,
-    session_id: str,
-    message: str,
-    query_emb: list[float],
-    t0: float,
-) -> ChatResponse:
-    """Invoke the agent graph and build a ChatResponse from its final state."""
-    tenant_config = tenant.config_json or {}
-    system_prompt = build_agent_system_prompt(
-        tenant.name,
-        tenant_config.get("system_prompt_append", ""),
-    )
+def _done_data(answer: str, intent: str, cache_hit: str, session_id: str, handoff: bool = False):
+    return _sse_event(SSE_DONE, {
+        "answer": answer, "intent": intent, "confidence": 1.0,
+        "sources": [], "cache_hit": cache_hit, "session_id": session_id, "handoff": handoff,
+    })
 
-    graph = _get_graph()
-    config = {"configurable": {"thread_id": session_id}}
 
-    # Inject runtime context for tools (tenant_slug, db)
-    set_runtime(tenant.slug, db)
-
-    initial_state: AgentState = {
+def _build_agent_state(tenant: Tenant, session_id: str, message: str, system_prompt: str) -> AgentState:
+    return {
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": message},
@@ -138,37 +82,12 @@ async def _run_agent(
         "handoff": False,
     }
 
-    final_state = await graph.ainvoke(initial_state, config)
 
-    messages = final_state.get("messages", [])
-    answer = ""
-    last_ai = None
-    for m in reversed(messages):
-        if hasattr(m, "type") and m.type == "ai" and m.content:
-            last_ai = m
-            answer = m.content
-            break
-        elif isinstance(m, dict) and m.get("role") == "assistant" and m.get("content"):
-            answer = m["content"]
-            break
-
-    # Extract sources from search_knowledge tool output
-    sources = []
-    for m in messages:
-        if hasattr(m, "type") and m.type == "tool" and getattr(m, "name", "") == "search_knowledge":
-            try:
-                parsed = json.loads(str(m.content))
-                sources = parsed.get("results", [])
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-    handoff = is_handoff_triggered()
-
-    # Persist conversation
+def _persist_turn(db: Session, tenant_id: str, session_id: str, message: str, answer: str, handoff: bool = False):
     from app.models.conversation import Conversation, Message as MsgModel
 
     conv = db.query(Conversation).filter(
-        Conversation.tenant_id == tenant.id,
+        Conversation.tenant_id == tenant_id,
         Conversation.session_id == session_id,
     ).first()
     if conv:
@@ -177,33 +96,144 @@ async def _run_agent(
             conv.status = "handed_off"
     else:
         conv = Conversation(
-            tenant_id=tenant.id, session_id=session_id,
+            tenant_id=tenant_id, session_id=session_id,
             status="handed_off" if handoff else "active",
         )
         db.add(conv)
         db.flush()
-
     db.add(MsgModel(conversation_id=conv.id, role="user", content=message))
     db.add(MsgModel(conversation_id=conv.id, role="assistant", content=answer))
     db.commit()
 
-    # Write to caches
+
+def _write_caches(tenant_id: str, message: str, query_emb: list[float] | None, answer: str):
+    if not answer:
+        return
     l1 = get_l1_cache()
     l2 = get_l2_cache()
-    if l1 and answer:
-        l1.set(tenant.id, message, answer)
-    if l2 and answer and query_emb:
-        l2.set(tenant.id, query_emb, answer)
+    if l1:
+        l1.set(tenant_id, message, answer)
+    if l2 and query_emb:
+        l2.set(tenant_id, query_emb, answer)
+
+
+def _extract_sources(messages: list) -> list[dict]:
+    for m in messages:
+        if hasattr(m, "type") and m.type == "tool" and getattr(m, "name", "") == search_knowledge.name:
+            try:
+                return json.loads(str(m.content)).get("results", [])
+            except (json.JSONDecodeError, TypeError):
+                pass
+    return []
+
+
+def _extract_answer(messages: list) -> str:
+    for m in reversed(messages):
+        if hasattr(m, "type") and m.type == "ai" and m.content:
+            return m.content
+        elif isinstance(m, dict) and m.get("role") == "assistant" and m.get("content"):
+            return m["content"]
+    return ""
+
+
+def _check_l2_cache(db_emb, tenant_id: str, message: str) -> tuple[str | None, list[float]]:
+    """Returns (cached_answer_or_None, query_embedding)."""
+    query_emb = db_emb.embed_sync_wrapper_called_via_await or None
+    return None, []
+
+
+async def _check_cache_and_embed(tenant_id: str, message: str) -> tuple[str | None, str, list[float]]:
+    """Check L1, then L2 cache. Returns (answer_or_none, cache_hit_level, query_emb)."""
+    l1 = get_l1_cache()
+    if l1:
+        cached = l1.get(tenant_id, message)
+        if cached:
+            return cached, CACHE_L1, []
+
+    emb = get_embedding_provider()
+    query_emb = (await emb.embed([message]))[0]
+
+    l2 = get_l2_cache()
+    if l2:
+        cached = l2.get(tenant_id, query_emb, threshold=settings.l2_cache_threshold)
+        if cached:
+            if l1:
+                l1.set(tenant_id, message, cached)  # promote to L1
+            return cached, CACHE_L2, query_emb
+
+    return None, CACHE_MISS, query_emb
+
+
+def _agent_setup(tenant: Tenant, db: Session) -> tuple[str, dict]:
+    """Build system prompt and graph config for the current tenant."""
+    tenant_config = tenant.config_json or {}
+    system_prompt = build_agent_system_prompt(
+        tenant.name,
+        tenant_config.get("system_prompt_append", ""),
+    )
+    set_runtime(tenant.slug, db)
+    return system_prompt, {
+        "configurable": {"thread_id": ""},
+        "recursion_limit": settings.agent_recursion_limit,
+    }
+
+
+# ---- public API ----
+
+async def process_chat(
+    tenant: Tenant,
+    db: Session,
+    session_id: str,
+    message: str,
+) -> ChatResponse:
+    """Non-streaming chat."""
+    t0 = time.monotonic()
+
+    cr = _chitchat_reply(message, tenant.name)
+    if cr:
+        return ChatResponse(answer=cr, intent=INTENT_FAQ, confidence=1.0,
+                            sources=[], cache_hit=CACHE_L1, session_id=session_id)
+
+    answer, cache_hit, query_emb = await _check_cache_and_embed(tenant.id, message)
+    if answer:
+        elapsed = (time.monotonic() - t0) * 1000
+        logger.info("chat_cache_hit", cache_hit=cache_hit, latency_ms=round(elapsed, 2))
+        return ChatResponse(answer=answer, intent=INTENT_FAQ, confidence=1.0,
+                            sources=[], cache_hit=cache_hit, session_id=session_id)
+
+    return await _run_agent(tenant, db, session_id, message, query_emb, t0)
+
+
+async def _run_agent(
+    tenant: Tenant, db: Session, session_id: str, message: str,
+    query_emb: list[float], t0: float,
+) -> ChatResponse:
+    system_prompt, config = _agent_setup(tenant, db)
+    config["configurable"]["thread_id"] = session_id
+
+    graph = _get_graph()
+    state = await graph.ainvoke(
+        _build_agent_state(tenant, session_id, message, system_prompt),
+        config,
+    )
+
+    messages = state.get("messages", [])
+    answer = _extract_answer(messages)
+    sources = _extract_sources(messages)
+    handoff = is_handoff_triggered()
+
+    _persist_turn(db, tenant.id, session_id, message, answer, handoff)
+    _write_caches(tenant.id, message, query_emb, answer)
 
     elapsed = (time.monotonic() - t0) * 1000
     logger.info("agent_completed", latency_ms=round(elapsed, 2), handoff=handoff)
 
     return ChatResponse(
         answer=answer,
-        intent="human" if handoff else "faq",
+        intent=INTENT_HUMAN if handoff else INTENT_FAQ,
         confidence=1.0,
         sources=sources,
-        cache_hit="miss",
+        cache_hit=CACHE_MISS,
         session_id=session_id,
         handoff=handoff,
     )
@@ -215,123 +245,64 @@ async def process_chat_stream(
     session_id: str,
     message: str,
 ):
-    """Streaming chat — yields SSE events, chitchat → cache → agent."""
+    """Streaming chat — yields SSE events."""
     t0 = time.monotonic()
 
-    # Fast path 0: chitchat — no API calls at all
+    # Fast path 0: chitchat
     cr = _chitchat_reply(message, tenant.name)
     if cr:
         logger.info("chat_chitchat", message=message)
-        yield f"data: {json.dumps({'type': 'done', 'data': {'answer': cr, 'intent': 'faq', 'confidence': 1.0, 'sources': [], 'cache_hit': 'L1', 'session_id': session_id, 'handoff': False}})}\n\n"
+        yield _done_data(cr, INTENT_FAQ, CACHE_L1, session_id)
         return
 
-    # Fast path 1: L1 exact cache
-    l1 = get_l1_cache()
-    if l1:
-        cached = l1.get(tenant.id, message)
-        if cached:
-            elapsed_ms = (time.monotonic() - t0) * 1000
-            logger.info("chat_stream_cache_hit", cache_hit="L1", latency_ms=round(elapsed_ms, 2))
-            yield f"data: {json.dumps({'type': 'done', 'data': {'answer': cached, 'intent': 'faq', 'confidence': 1.0, 'sources': [], 'cache_hit': 'L1', 'session_id': session_id, 'handoff': False}})}\n\n"
-            return
+    # Fast path 1+2: L1 / L2 cache
+    answer, cache_hit, query_emb = await _check_cache_and_embed(tenant.id, message)
+    if answer:
+        elapsed = (time.monotonic() - t0) * 1000
+        logger.info("chat_stream_cache_hit", cache_hit=cache_hit, latency_ms=round(elapsed, 2))
+        yield _done_data(answer, INTENT_FAQ, cache_hit, session_id)
+        return
 
-    # Fast path: L2 semantic cache
-    emb = get_embedding_provider()
-    query_emb = (await emb.embed([message]))[0]
-
-    l2 = get_l2_cache()
-    if l2:
-        cached = l2.get(tenant.id, query_emb, threshold=settings.l2_cache_threshold)
-        if cached:
-            if l1:
-                l1.set(tenant.id, message, cached)
-            elapsed_ms = (time.monotonic() - t0) * 1000
-            logger.info("chat_stream_cache_hit", cache_hit="L2", latency_ms=round(elapsed_ms, 2))
-            yield f"data: {json.dumps({'type': 'done', 'data': {'answer': cached, 'intent': 'faq', 'confidence': 1.0, 'sources': [], 'cache_hit': 'L2', 'session_id': session_id, 'handoff': False}})}\n\n"
-            return
-
-    # Agent path with streaming
-    tenant_config = tenant.config_json or {}
-    system_prompt = build_agent_system_prompt(
-        tenant.name,
-        tenant_config.get("system_prompt_append", ""),
-    )
-
-    # Inject runtime context for tools
-    set_runtime(tenant.slug, db)
+    # Agent path
+    system_prompt, config = _agent_setup(tenant, db)
+    config["configurable"]["thread_id"] = session_id
 
     graph = _get_graph()
-    config = {"configurable": {"thread_id": session_id}}
-
-    initial_state: AgentState = {
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": message},
-        ],
-        "tenant_id": tenant.id,
-        "session_id": session_id,
-        "handoff": False,
-    }
-
     full_answer = ""
     handoff = False
 
-    async for event in graph.astream_events(initial_state, config, version="v2"):
+    async for event in graph.astream_events(
+        _build_agent_state(tenant, session_id, message, system_prompt),
+        config, version="v2",
+    ):
         kind = event.get("event", "")
 
         if kind == "on_chat_model_stream":
             chunk = event.get("data", {}).get("chunk")
             if chunk and chunk.content:
                 full_answer += chunk.content
-                yield f"data: {json.dumps({'type': 'delta', 'data': chunk.content})}\n\n"
+                yield _sse_event(SSE_DELTA, chunk.content)
 
         elif kind == "on_tool_start":
             tool_name = event.get("name", "")
-            yield f"data: {json.dumps({'type': 'tool_start', 'data': {'tool': tool_name}})}\n\n"
-            if tool_name == "handoff_to_human":
+            yield _sse_event(SSE_TOOL_START, {"tool": tool_name})
+            if tool_name == handoff_to_human.name:
                 handoff = True
 
         elif kind == "on_tool_end":
             tool_name = event.get("name", "")
             tool_output = event.get("data", {}).get("output", "")
-            if tool_name == "search_knowledge":
+            if tool_name == search_knowledge.name:
                 try:
-                    parsed = json.loads(str(tool_output))
-                    sources_data = parsed.get("results", [])
+                    sources_data = json.loads(str(tool_output)).get("results", [])
                 except (json.JSONDecodeError, TypeError):
                     sources_data = []
-                yield f"data: {json.dumps({'type': 'sources', 'data': sources_data})}\n\n"
+                yield _sse_event(SSE_SOURCES, sources_data)
 
-    # Persist conversation
-    from app.models.conversation import Conversation, Message as MsgModel
-
-    conv = db.query(Conversation).filter(
-        Conversation.tenant_id == tenant.id,
-        Conversation.session_id == session_id,
-    ).first()
-    if conv:
-        conv.message_count = (conv.message_count or 0) + 1
-        if handoff:
-            conv.status = "handed_off"
-    else:
-        conv = Conversation(
-            tenant_id=tenant.id, session_id=session_id,
-            status="handed_off" if handoff else "active",
-        )
-        db.add(conv)
-        db.flush()
-
-    db.add(MsgModel(conversation_id=conv.id, role="user", content=message))
-    db.add(MsgModel(conversation_id=conv.id, role="assistant", content=full_answer))
-    db.commit()
-
-    # Write to caches
-    if l1 and full_answer:
-        l1.set(tenant.id, message, full_answer)
-    if l2 and full_answer and query_emb:
-        l2.set(tenant.id, query_emb, full_answer)
+    _persist_turn(db, tenant.id, session_id, message, full_answer, handoff)
+    _write_caches(tenant.id, message, query_emb, full_answer)
 
     elapsed = (time.monotonic() - t0) * 1000
     logger.info("agent_stream_completed", latency_ms=round(elapsed, 2), handoff=handoff)
 
-    yield f"data: {json.dumps({'type': 'done', 'data': {'answer': full_answer, 'intent': 'human' if handoff else 'faq', 'confidence': 1.0, 'sources': [], 'cache_hit': 'miss', 'session_id': session_id, 'handoff': handoff}})}\n\n"
+    yield _done_data(full_answer, INTENT_HUMAN if handoff else INTENT_FAQ, CACHE_MISS, session_id, handoff)

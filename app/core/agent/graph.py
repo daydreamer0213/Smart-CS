@@ -25,8 +25,8 @@ def _build_llm() -> ChatOpenAI:
         temperature=0.1,
         max_tokens=800,
         max_retries=3,
-        timeout=30.0,
-        streaming=True,
+        timeout=settings.agent_timeout_seconds,
+        streaming=settings.agent_stream_enabled,
     )
     return llm.bind_tools(_TOOLS)
 

@@ -5,7 +5,6 @@ from collections.abc import Generator
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.admin.auth import verify_admin  # noqa: F401
 from app.db import SessionLocal
 from app.models.tenant import Tenant
 

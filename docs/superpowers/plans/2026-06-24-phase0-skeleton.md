@@ -230,20 +230,36 @@ class Settings(BaseSettings):
 settings = Settings()
 ```
 
-- [ ] **Step 2: Verify config loads**
+- [ ] **Step 2: Write app/db.py**
+
+```python
+"""Database engine and session factory — shared by middleware and API deps."""
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.config import settings
+
+engine = create_engine(
+    settings.database_url, connect_args={"check_same_thread": False}
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+```
+
+- [ ] **Step 3: Verify config loads**
 
 ```bash
 D:\conda\Scripts\conda.exe run -n smart-cs python -c "
 import sys; sys.path.insert(0, 'D:/AAA/smart-cs')
 from app.config import settings
+from app.db import engine, SessionLocal
 print(f'database_url={settings.database_url}')
-print(f'llm_model={settings.llm_model}')
-print(f'log_level={settings.log_level}')
-print('Config OK')
+print(f'engine={engine}')
+print('Config + DB OK')
 "
 ```
 
-Expected: prints default values, "Config OK"
+Expected: prints config values and engine repr, "Config + DB OK"
 
 ---
 
@@ -657,7 +673,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from app.api.deps import SessionLocal
+from app.db import SessionLocal
 from app.middleware.logging import request_id_var
 from app.models.tenant import Tenant
 
@@ -738,16 +754,10 @@ Expected: prints slug extraction results, "Middleware OK"
 """FastAPI dependency injection — database session, tenant lookup, admin auth."""
 
 from fastapi import Depends, Header, HTTPException, Request
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.db import SessionLocal
 from app.models.tenant import AdminApiKey, Tenant
-
-engine = create_engine(
-    settings.database_url, connect_args={"check_same_thread": False}
-)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def get_db():
@@ -964,7 +974,7 @@ from app.middleware.tenant import TenantMiddleware
 async def lifespan(_app: FastAPI):
     setup_structlog(settings.log_level)
 
-    from app.api.deps import SessionLocal, engine
+    from app.db import SessionLocal, engine
     from app.models import Base
     from app.models.tenant import Tenant
 

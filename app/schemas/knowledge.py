@@ -1,22 +1,75 @@
-"""Knowledge schemas — request/response models for knowledge base CRUD.
+"""Knowledge base CRUD schemas."""
 
-Covers KnowledgeItem and Category create/update/list payloads,
-plus import/export formats and search query/result models.
-"""
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class KnowledgeCreate(BaseModel):
-    """Placeholder for knowledge item creation schema."""
-    pass
+    question: str = Field(..., min_length=1, max_length=2000)
+    answer: str = Field(..., min_length=1, max_length=5000)
+    keywords: str | None = Field(None, max_length=500)
+    category_id: str | None = None
 
 
 class KnowledgeUpdate(BaseModel):
-    """Placeholder for knowledge item update schema."""
-    pass
+    question: str | None = Field(None, min_length=1, max_length=2000)
+    answer: str | None = Field(None, min_length=1, max_length=5000)
+    keywords: str | None = Field(None, max_length=500)
+    category_id: str | None = None
+    status: Literal["active", "draft", "archived"] | None = None
 
 
-class KnowledgeResponse(BaseModel):
-    """Placeholder for knowledge item response schema."""
-    pass
+class KnowledgeItemResponse(BaseModel):
+    id: str
+    tenant_id: str
+    category_id: str | None
+    question: str
+    answer: str
+    keywords: str | None
+    embedding_id: str | None
+    status: str
+    created_at: str
+    updated_at: str
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeListParams(BaseModel):
+    page: int = Field(1, ge=1)
+    page_size: int = Field(20, ge=1, le=100)
+    q: str | None = None
+    category_id: str | None = None
+    status: Literal["active", "draft", "archived"] | None = None
+
+
+class KnowledgeListResponse(BaseModel):
+    items: list[KnowledgeItemResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class CategoryCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str = Field("", max_length=1000)
+    sort_order: int = 0
+
+
+class CategoryUpdate(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = Field(None, max_length=1000)
+    sort_order: int | None = None
+
+
+class CategoryResponse(BaseModel):
+    id: str
+    tenant_id: str
+    name: str
+    description: str
+    sort_order: int
+    created_at: str
+    updated_at: str
+
+    model_config = {"from_attributes": True}

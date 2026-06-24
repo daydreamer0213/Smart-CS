@@ -3,13 +3,21 @@
 import time
 
 import structlog
+from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core.intent.classifier import classify_intent
 from app.core.llm.client import LLMClient
 from app.core.llm.prompts import HANDOFF_MESSAGE, build_system_prompt, response_prompt
-from app.core.retrieval_module import get_bm25_manager, get_embedding_provider, get_vector_store
+from app.core.retrieval_module import (
+    get_bm25_manager,
+    get_embedding_provider,
+    get_l1_cache,
+    get_l2_cache,
+    get_vector_store,
+)
 from app.core.retrieval.fusion import rrf_fusion
+from app.models.tenant import Tenant
 from app.schemas.chat import ChatResponse
 
 logger = structlog.get_logger()
@@ -51,18 +59,55 @@ async def _retrieve(tenant_slug: str, query: str) -> list[dict]:
 
 
 async def process_chat(
-    tenant_slug: str,
-    tenant_name: str,
-    tenant_config: dict,
+    tenant: Tenant,
+    db: Session,
     session_id: str,
     message: str,
 ) -> ChatResponse:
     t0 = time.monotonic()
 
+    # ---- Step 0: L1 exact-match cache ----
+    l1 = get_l1_cache()
+    if l1:
+        cached = l1.get(tenant.id, message)
+        if cached:
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            logger.info("chat_cache_hit", cache_hit="L1", latency_ms=round(elapsed_ms, 2))
+            return ChatResponse(
+                answer=cached,
+                intent="faq",
+                confidence=1.0,
+                sources=[],
+                cache_hit="L1",
+                session_id=session_id,
+            )
+
+    # ---- Step 0.5: L2 semantic cache ----
+    emb = get_embedding_provider()
+    query_emb = (await emb.embed([message]))[0]
+
+    l2 = get_l2_cache()
+    if l2:
+        cached = l2.get(tenant.id, query_emb, threshold=settings.l2_cache_threshold)
+        if cached:
+            if l1:
+                l1.set(tenant.id, message, cached)  # promote to L1
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            logger.info("chat_cache_hit", cache_hit="L2", latency_ms=round(elapsed_ms, 2))
+            return ChatResponse(
+                answer=cached,
+                intent="faq",
+                confidence=1.0,
+                sources=[],
+                cache_hit="L2",
+                session_id=session_id,
+            )
+
     # Step 1: Hybrid retrieval
-    retrieval_results = await _retrieve(tenant_slug, message)
+    retrieval_results = await _retrieve(tenant.slug, message)
 
     # Step 2: Intent classification
+    tenant_config = tenant.config_json or {}
     intent, source, confidence = await classify_intent(
         user_input=message,
         human_keywords=tenant_config.get("human_keywords", []),
@@ -87,7 +132,7 @@ async def process_chat(
     # Step 4: LLM generation
     llm = _get_llm()
     system_prompt = build_system_prompt(
-        tenant_name,
+        tenant.name,
         tenant_config.get("system_prompt_append", ""),
     )
     prompt = response_prompt(intent, retrieval_results[:3], [], message)
@@ -95,6 +140,12 @@ async def process_chat(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt},
     ])
+
+    # ---- Step 5: Write to caches ----
+    if l1:
+        l1.set(tenant.id, message, answer)
+    if l2:
+        l2.set(tenant.id, query_emb, answer)
 
     elapsed = (time.monotonic() - t0) * 1000
     logger.info(
@@ -104,6 +155,28 @@ async def process_chat(
         results=len(retrieval_results),
         latency_ms=round(elapsed, 2),
     )
+
+    # ---- Step 6: Persist conversation and message ----
+    from app.models.conversation import Conversation, Message
+
+    conv = db.query(Conversation).filter(
+        Conversation.tenant_id == tenant.id,
+        Conversation.session_id == session_id,
+    ).first()
+    if conv:
+        conv.message_count += 1
+    else:
+        conv = Conversation(tenant_id=tenant.id, session_id=session_id)
+        db.add(conv)
+        db.flush()
+
+    msg = Message(
+        conversation_id=conv.id,
+        role="user",
+        content=message,
+        intent=intent,
+    )
+    db.add(msg)
 
     return ChatResponse(
         answer=answer,

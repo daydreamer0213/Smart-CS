@@ -69,10 +69,14 @@ async def lifespan(_app: FastAPI):
         set_vector_store,
         set_bm25_manager,
         set_embedding_provider,
+        set_l1_cache,
+        set_l2_cache,
     )
     from app.core.retrieval.vector_store import VectorStore
     from app.core.retrieval.bm25_index import BM25IndexManager
     from app.core.embedding import get_embedding_provider as get_emb_provider
+    from app.core.cache.exact import ExactCache
+    from app.core.cache.semantic import SemanticCache
     from app.models.knowledge import KnowledgeItem
 
     vector_store = VectorStore(settings.chroma_persist_dir)
@@ -82,6 +86,10 @@ async def lifespan(_app: FastAPI):
     set_vector_store(vector_store)
     set_bm25_manager(bm25_manager)
     set_embedding_provider(embedding_provider)
+
+    # ---- Initialize caches ----
+    set_l1_cache(ExactCache())
+    set_l2_cache(SemanticCache())
 
     # Build BM25 indices for all existing active tenants
     db = SessionLocal()

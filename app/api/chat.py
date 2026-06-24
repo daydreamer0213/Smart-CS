@@ -23,9 +23,8 @@ async def chat(
     session_id = body.session_id or str(uuid.uuid4())
 
     return await process_chat(
-        tenant_slug=tenant.slug,
-        tenant_name=tenant.name,
-        tenant_config=tenant.config_json or {},
+        tenant=tenant,
+        db=db,
         session_id=session_id,
         message=body.message,
     )

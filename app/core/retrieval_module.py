@@ -18,6 +18,8 @@ Usage:
     emb = get_embedding_provider()
 """
 
+from app.core.cache.exact import ExactCache
+from app.core.cache.semantic import SemanticCache
 from app.core.retrieval.vector_store import VectorStore
 from app.core.retrieval.bm25_index import BM25IndexManager
 from app.core.embedding.base import BaseEmbeddingProvider
@@ -25,6 +27,8 @@ from app.core.embedding.base import BaseEmbeddingProvider
 _vector_store: VectorStore | None = None
 _bm25_manager: BM25IndexManager | None = None
 _embedding_provider: BaseEmbeddingProvider | None = None
+_l1_cache: ExactCache | None = None
+_l2_cache: SemanticCache | None = None
 
 
 def set_vector_store(store: VectorStore) -> None:
@@ -55,3 +59,21 @@ def set_embedding_provider(provider: BaseEmbeddingProvider) -> None:
 def get_embedding_provider() -> BaseEmbeddingProvider:
     assert _embedding_provider is not None, "EmbeddingProvider not initialized"
     return _embedding_provider
+
+
+def set_l1_cache(cache: ExactCache) -> None:
+    global _l1_cache
+    _l1_cache = cache
+
+
+def get_l1_cache() -> ExactCache | None:
+    return _l1_cache
+
+
+def set_l2_cache(cache: SemanticCache) -> None:
+    global _l2_cache
+    _l2_cache = cache
+
+
+def get_l2_cache() -> SemanticCache | None:
+    return _l2_cache

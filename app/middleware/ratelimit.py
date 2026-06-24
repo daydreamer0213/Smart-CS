@@ -16,11 +16,26 @@ class RateLimiter:
         self._rpm = rpm
         self._buckets: dict[str, tuple[float, int]] = {}
         self._lock = threading.Lock()
+        self._check_count = 0
 
     def check(self, key: str) -> tuple[bool, int]:
-        """Thread-safe token bucket check. Returns (allowed, remaining)."""
+        """Thread-safe token bucket check. Returns (allowed, remaining).
+
+        Periodically evicts stale buckets (those with tokens at full capacity
+        and not accessed for > 5 minutes) to prevent unbounded memory growth.
+        """
         now = time.monotonic()
         with self._lock:
+            # Evict stale entries every 1000 checks
+            self._check_count += 1
+            if self._check_count % 1000 == 0:
+                stale = [
+                    k for k, (t, tok) in self._buckets.items()
+                    if tok == self._rpm and now - t > 300
+                ]
+                for k in stale:
+                    del self._buckets[k]
+
             last_refill, tokens = self._buckets.get(key, (now, self._rpm))
             elapsed = now - last_refill
             tokens = min(self._rpm, tokens + int(elapsed * self._rpm / 60))

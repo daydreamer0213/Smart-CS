@@ -2,6 +2,9 @@
 
 Nodes: agent (LLM + tool definitions) → tools (ToolNode) → agent (loop)
 The graph terminates when the LLM produces a response without tool_calls.
+
+Multi-turn: messages are trimmed to the most recent ``max_context_tokens``
+tokens before each LLM call to prevent unbounded context growth.
 """
 
 from langgraph.graph import END, START, StateGraph
@@ -14,6 +17,44 @@ from app.core.agent.state import AgentState
 from app.core.agent.tools import handoff_to_human, search_knowledge
 
 _TOOLS = [search_knowledge, handoff_to_human]
+
+# Rough token estimate: ~4 chars per token for Chinese, ~4 for mixed
+_CHARS_PER_TOKEN = 4
+
+
+def _get_msg_content(msg) -> str:
+    """Extract text content from either a dict or langchain message object."""
+    if isinstance(msg, dict):
+        return msg.get("content", "")
+    return getattr(msg, "content", "") or ""
+
+
+def _get_msg_role(msg) -> str:
+    if isinstance(msg, dict):
+        return msg.get("role", "")
+    return getattr(msg, "type", "") or getattr(msg, "role", "")
+
+
+def _trim_messages(messages: list, max_tokens: int) -> list:
+    """Keep the system message + most recent messages within token budget."""
+    if len(messages) <= 2:
+        return messages
+
+    # Keep system message (first), trim from the front after it
+    first = messages[0]
+    system = [first] if _get_msg_role(first) == "system" else []
+    rest = messages[1:] if system else list(messages)
+
+    total = sum(len(_get_msg_content(m)) // _CHARS_PER_TOKEN + 4 for m in rest)
+    if total <= max_tokens:
+        return messages
+
+    trimmed = list(rest)
+    while trimmed and total > max_tokens:
+        dropped = trimmed.pop(0)
+        total -= len(_get_msg_content(dropped)) // _CHARS_PER_TOKEN + 4
+
+    return system + trimmed
 
 
 def _build_llm() -> ChatOpenAI:
@@ -52,8 +93,9 @@ def build_agent_graph():
     llm = _build_llm()
 
     async def agent_node(state: AgentState):
-        """Invoke LLM with tool definitions and full message history."""
-        response = await llm.ainvoke(state["messages"])
+        """Invoke LLM with tool definitions and truncated message history."""
+        trimmed = _trim_messages(state["messages"], settings.max_context_tokens)
+        response = await llm.ainvoke(trimmed)
         return {"messages": [response]}
 
     tool_node = ToolNode(_TOOLS)

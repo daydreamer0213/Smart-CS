@@ -59,3 +59,8 @@ class BM25IndexManager:
             (did, "") for did in self._doc_ids.get(tenant_slug, []) if did != doc_id
         ]
         self._rebuild(tenant_slug, current)
+
+    def remove_tenant(self, tenant_slug: str) -> None:
+        """Drop a tenant's BM25 index entirely to reclaim memory."""
+        self._indexes.pop(tenant_slug, None)
+        self._doc_ids.pop(tenant_slug, None)

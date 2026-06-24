@@ -9,6 +9,7 @@ set by the caller before invoking the graph.  The LLM only sees and
 provides the ``query`` / ``reason`` parameters.
 """
 
+import asyncio
 import json
 from contextvars import ContextVar
 
@@ -54,8 +55,13 @@ async def search_knowledge(query: str) -> str:
     emb = get_embedding_provider()
 
     query_vec = (await emb.embed([query]))[0]
-    vector_results = vs.search(tenant_slug, query_vec, top_k=5)
-    bm25_results = bm.search(tenant_slug, query, top_k=5)
+
+    # Run vector and BM25 searches in parallel — they are independent
+    loop = asyncio.get_running_loop()
+    vector_results, bm25_results = await asyncio.gather(
+        loop.run_in_executor(None, vs.search, tenant_slug, query_vec, 5),
+        loop.run_in_executor(None, bm.search, tenant_slug, query, 5),
+    )
 
     fused = rrf_fusion(vector_results, bm25_results, top_k=5)
 

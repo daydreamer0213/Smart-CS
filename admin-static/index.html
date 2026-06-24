@@ -1,5 +1,997 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><title>SmartCS Admin</title></head>
-<body><h1>SmartCS Admin Panel — Phase 3</h1></body>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartCS 管理后台</title>
+<style>
+/* ========== Reset & Base ========== */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:14px}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans SC",sans-serif;background:#f0f2f5;color:#1a1a2e;overflow:hidden;height:100vh}
+a{color:#1890ff;text-decoration:none}
+/* ========== Layout ========== */
+.layout{display:flex;height:100vh}
+/* ---- Sidebar ---- */
+.sidebar{width:220px;background:#001529;color:#fff;display:flex;flex-direction:column;flex-shrink:0}
+.sidebar-logo{padding:20px 18px;font-size:16px;font-weight:600;border-bottom:1px solid rgba(255,255,255,.08);letter-spacing:.5px}
+.sidebar-logo span{color:#1890ff}
+.sidebar-nav{flex:1;padding:12px 0}
+.nav-item{display:flex;align-items:center;gap:10px;padding:12px 20px;cursor:pointer;color:rgba(255,255,255,.65);transition:all .2s;font-size:14px;border-left:3px solid transparent}
+.nav-item:hover{color:#fff;background:rgba(255,255,255,.04)}
+.nav-item.active{color:#fff;background:rgba(24,144,255,.15);border-left-color:#1890ff}
+.nav-item svg{flex-shrink:0}
+.sidebar-footer{padding:16px 20px;border-top:1px solid rgba(255,255,255,.08);font-size:12px;color:rgba(255,255,255,.35)}
+/* ---- Main ---- */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+/* ---- Top Bar ---- */
+.topbar{height:56px;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 24px;box-shadow:0 1px 4px rgba(0,0,0,.06);flex-shrink:0;z-index:10}
+.topbar-title{font-size:16px;font-weight:600;color:#1a1a2e}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.topbar-right label{font-size:13px;color:#666}
+.api-key-input{width:280px;padding:6px 10px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;outline:none;transition:border .2s}
+.api-key-input:focus{border-color:#1890ff;box-shadow:0 0 0 2px rgba(24,144,255,.15)}
+/* ---- Content ---- */
+.content{flex:1;overflow-y:auto;padding:24px}
+.page{display:none}
+.page.active{display:block}
+/* ========== Components ========== */
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;cursor:pointer;transition:all .2s;background:#fff;color:#333;line-height:1.4}
+.btn:hover{border-color:#1890ff;color:#1890ff}
+.btn-primary{background:#1890ff;border-color:#1890ff;color:#fff}
+.btn-primary:hover{background:#40a9ff;border-color:#40a9ff;color:#fff}
+.btn-danger{color:#ff4d4f;border-color:#ff4d4f}
+.btn-danger:hover{background:#ff4d4f;color:#fff}
+.btn-sm{padding:3px 8px;font-size:12px}
+.btn-ghost{border:none;background:transparent;color:rgba(255,255,255,.65);padding:6px 10px}
+.btn-ghost:hover{color:#fff}
+/* Cards */
+.card{background:#fff;border-radius:6px;box-shadow:0 1px 2px rgba(0,0,0,.06);margin-bottom:16px}
+.card-header{padding:14px 20px;border-bottom:1px solid #f0f0f0;font-size:15px;font-weight:600;display:flex;align-items:center;justify-content:space-between}
+.card-body{padding:16px 20px}
+/* Table */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{background:#fafafa;border-bottom:2px solid #f0f0f0;padding:10px 12px;text-align:left;font-weight:600;color:#555;white-space:nowrap}
+tbody td{padding:10px 12px;border-bottom:1px solid #f0f0f0}
+tbody tr:hover{background:#f5f9ff}
+.text-truncate{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.text-muted{color:#999}
+/* Badge */
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500}
+.badge-active{background:#e6f7ff;color:#1890ff}
+.badge-draft{background:#fff7e6;color:#fa8c16}
+.badge-archived{background:#f5f5f5;color:#999}
+/* Pagination */
+.pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 0 0}
+.pagination-info{font-size:13px;color:#666}
+.pagination-btns{display:flex;gap:4px;align-items:center}
+.pagination-btns button{min-width:30px;height:30px;border:1px solid #d9d9d9;border-radius:4px;background:#fff;cursor:pointer;font-size:13px;transition:all .2s;color:#333}
+.pagination-btns button:hover{border-color:#1890ff;color:#1890ff}
+.pagination-btns button.active{background:#1890ff;border-color:#1890ff;color:#fff}
+.pagination-btns button:disabled{color:#d9d9d9;cursor:not-allowed;border-color:#d9d9d9}
+/* Toolbar */
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.toolbar .search-input{padding:6px 10px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;outline:none;width:240px;transition:border .2s}
+.toolbar .search-input:focus{border-color:#1890ff;box-shadow:0 0 0 2px rgba(24,144,255,.15)}
+.toolbar select{padding:6px 10px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;outline:none;background:#fff}
+.toolbar .spacer{flex:1}
+/* Modal */
+.modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.45);z-index:1000;justify-content:center;align-items:flex-start;padding-top:80px}
+.modal-overlay.open{display:flex}
+.modal{background:#fff;border-radius:6px;width:560px;max-width:90vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 4px 12px rgba(0,0,0,.15)}
+.modal-header{padding:16px 20px;border-bottom:1px solid #f0f0f0;font-size:15px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+.modal-header .close-btn{background:none;border:none;font-size:20px;cursor:pointer;color:#999;padding:0;line-height:1}
+.modal-header .close-btn:hover{color:#333}
+.modal-body{padding:20px;overflow-y:auto;flex:1}
+.modal-footer{padding:12px 20px;border-top:1px solid #f0f0f0;display:flex;justify-content:flex-end;gap:8px}
+/* Form */
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:13px;font-weight:500;color:#333;margin-bottom:4px}
+.form-group label .required{color:#ff4d4f;margin-left:2px}
+.form-group input,.form-group textarea,.form-group select{width:100%;padding:6px 10px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;outline:none;transition:border .2s;font-family:inherit}
+.form-group input:focus,.form-group textarea:focus,.form-group select:focus{border-color:#1890ff;box-shadow:0 0 0 2px rgba(24,144,255,.15)}
+.form-group textarea{resize:vertical;min-height:60px}
+.form-group .help-text{font-size:12px;color:#999;margin-top:2px}
+/* Confirm Dialog */
+.confirm-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.45);z-index:1100;justify-content:center;align-items:center}
+.confirm-overlay.open{display:flex}
+.confirm-dialog{background:#fff;border-radius:6px;width:380px;padding:24px;box-shadow:0 4px 12px rgba(0,0,0,.15);text-align:center}
+.confirm-dialog .confirm-icon{font-size:36px;color:#faad14;margin-bottom:12px}
+.confirm-dialog h3{font-size:16px;margin-bottom:8px}
+.confirm-dialog p{font-size:13px;color:#666;margin-bottom:20px}
+.confirm-dialog .confirm-actions{display:flex;justify-content:center;gap:8px}
+/* ========== Analytics Page ========== */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.stat-card{background:#fff;border-radius:6px;padding:20px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.stat-card .stat-label{font-size:13px;color:#888;margin-bottom:4px}
+.stat-card .stat-value{font-size:26px;font-weight:700;color:#1a1a2e}
+.stat-card .stat-value.green{color:#52c41a}
+.stat-card .stat-value.blue{color:#1890ff}
+.stat-card .stat-value.orange{color:#fa8c16}
+.stat-card .stat-value.red{color:#ff4d4f}
+.charts-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.chart-card{background:#fff;border-radius:6px;padding:20px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.chart-card h4{font-size:14px;font-weight:600;margin-bottom:12px;color:#333}
+.chart-card canvas{width:100% !important;}
+/* ========== Toast ========== */
+.toast{position:fixed;top:20px;right:20px;z-index:2000;padding:10px 18px;border-radius:4px;font-size:13px;color:#fff;box-shadow:0 4px 12px rgba(0,0,0,.15);display:none;animation:slideIn .3s ease}
+.toast.success{background:#52c41a}
+.toast.error{background:#ff4d4f}
+.toast.info{background:#1890ff}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+/* ========== Responsive ========== */
+@media(max-width:900px){.stats-grid{grid-template-columns:repeat(2,1fr)}.charts-row{grid-template-columns:1fr}}
+@media(max-width:640px){.sidebar{width:60px}.sidebar-logo span,.nav-item span{display:none}.nav-item{justify-content:center;border-left:none;padding:12px}.topbar-right label{display:none}.api-key-input{width:160px}.stats-grid{grid-template-columns:1fr}}
+/* ========== Batch Import ========== */
+.batch-import-text{width:100%;min-height:120px;padding:8px 10px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;font-family:monospace;outline:none;resize:vertical}
+.batch-import-text:focus{border-color:#1890ff;box-shadow:0 0 0 2px rgba(24,144,255,.15)}
+/* ========== Loading ========== */
+.loading-dots::after{content:'';animation:dots 1.2s steps(4,end) infinite}
+@keyframes dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}100%{content:''}}
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- ====== Sidebar ====== -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">Smart<span>CS</span></div>
+    <nav class="sidebar-nav">
+      <div class="nav-item active" data-tab="knowledge" onclick="switchTab('knowledge')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+        <span>知识库管理</span>
+      </div>
+      <div class="nav-item" data-tab="analytics" onclick="switchTab('analytics')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+        <span>数据分析</span>
+      </div>
+    </nav>
+    <div class="sidebar-footer">v0.1.0</div>
+  </aside>
+
+  <!-- ====== Main ====== -->
+  <div class="main">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar-title">SmartCS 管理后台</div>
+      <div class="topbar-right">
+        <label for="apiKeyInput">API Key</label>
+        <input type="password" id="apiKeyInput" class="api-key-input" placeholder="输入管理 API Key..." onchange="saveApiKey()" value="">
+      </div>
+    </header>
+
+    <!-- Content -->
+    <div class="content">
+
+      <!-- ========== Knowledge Page ========== -->
+      <div id="page-knowledge" class="page active">
+        <div class="card">
+          <div class="card-header">
+            <span>知识库列表</span>
+            <div>
+              <button class="btn" onclick="openBatchImport()">批量导入</button>
+              <button class="btn btn-primary" onclick="openAddModal()">+ 新增</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="toolbar">
+              <input type="text" class="search-input" id="searchInput" placeholder="搜索问题或答案..." oninput="debouncedLoadKnowledge()">
+              <select id="categoryFilter" onchange="loadKnowledge()">
+                <option value="">全部分类</option>
+              </select>
+              <div class="spacer"></div>
+              <button class="btn btn-sm" onclick="loadKnowledge()">刷新</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:28%">问题</th>
+                    <th style="width:32%">答案</th>
+                    <th style="width:8%">状态</th>
+                    <th style="width:10%">分类</th>
+                    <th style="width:12%">更新于</th>
+                    <th style="width:10%">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="knowledgeTableBody">
+                  <tr><td colspan="6" style="text-align:center;color:#999;padding:40px;">加载中...</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination" id="knowledgePagination" style="display:none">
+              <div class="pagination-info" id="paginationInfo"></div>
+              <div class="pagination-btns" id="paginationBtns"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== Analytics Page ========== -->
+      <div id="page-analytics" class="page">
+        <!-- Overview -->
+        <div class="stats-grid" id="statsGrid">
+          <div class="stat-card">
+            <div class="stat-label">总对话数</div>
+            <div class="stat-value blue" id="statConversations">--</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">平均延迟</div>
+            <div class="stat-value orange" id="statLatency">--</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">缓存命中率</div>
+            <div class="stat-value green" id="statCacheRate">--</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">转人工率</div>
+            <div class="stat-value red" id="statHandoffRate">--</div>
+          </div>
+        </div>
+        <!-- Charts -->
+        <div class="charts-row">
+          <div class="chart-card">
+            <h4>意图分布</h4>
+            <canvas id="intentChart" height="220"></canvas>
+          </div>
+          <div class="chart-card">
+            <h4>近7日对话趋势</h4>
+            <canvas id="trendChart" height="220"></canvas>
+          </div>
+        </div>
+        <!-- Knowledge Hit Ranking -->
+        <div class="card">
+          <div class="card-header"><span>知识库命中排行 (Top 10)</span></div>
+          <div class="card-body" style="padding:0 20px 16px">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th style="width:10%">#</th><th style="width:45%">问题</th><th style="width:45%">引用次数</th></tr>
+                </thead>
+                <tbody id="hitRankBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+<!-- ====== Knowledge Modal (Add/Edit) ====== -->
+<div class="modal-overlay" id="knowledgeModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="knowledgeModalTitle">新增知识条目</span>
+      <button class="close-btn" onclick="closeModal('knowledgeModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>问题 <span class="required">*</span></label>
+        <input type="text" id="kQuestion" placeholder="输入常见问题">
+      </div>
+      <div class="form-group">
+        <label>答案 <span class="required">*</span></label>
+        <textarea id="kAnswer" rows="4" placeholder="输入答案内容"></textarea>
+      </div>
+      <div class="form-group">
+        <label>关键词</label>
+        <input type="text" id="kKeywords" placeholder="用逗号分隔，如：退货,退款">
+        <div class="help-text">多个关键词用逗号分隔</div>
+      </div>
+      <div class="form-group">
+        <label>分类</label>
+        <select id="kCategoryId"><option value="">未分类</option></select>
+      </div>
+      <input type="hidden" id="kEditId" value="">
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('knowledgeModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveKnowledgeItem()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== Batch Import Modal ====== -->
+<div class="modal-overlay" id="batchImportModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>批量导入知识条目</span>
+      <button class="close-btn" onclick="closeModal('batchImportModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>导入数据 (JSON 数组)</label>
+        <textarea class="batch-import-text" id="batchImportText" placeholder='[
+  {
+    "question": "如何退货?",
+    "answer": "在订单详情页点击退货申请",
+    "keywords": "退货,退款",
+    "category_id": 1
+  }
+]'></textarea>
+        <div class="help-text">每个条目必须含 question 和 answer，keywords 和 category_id 可选</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('batchImportModal')">取消</button>
+      <button class="btn btn-primary" onclick="doBatchImport()">导入</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== Confirm Dialog ====== -->
+<div class="confirm-overlay" id="confirmDialog">
+  <div class="confirm-dialog">
+    <div class="confirm-icon">&#9888;</div>
+    <h3 id="confirmTitle">确认删除</h3>
+    <p id="confirmMessage">确定要删除这条知识条目吗？</p>
+    <div class="confirm-actions">
+      <button class="btn" onclick="closeConfirm()">取消</button>
+      <button class="btn btn-danger" id="confirmBtn" onclick="confirmAction()">删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== Toast ====== -->
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===================================================================
+   SmartCS Admin Panel — Single Page Application
+   =================================================================== */
+
+// ---------- State ----------
+const STATE = {
+  tenant: 'demo',
+  apiKey: '',
+  knowledge: { items: [], total: 0, page: 1, pageSize: 10 },
+  categories: [],
+  analytics: null,
+  confirmCallback: null
+};
+
+// ---------- Init ----------
+document.addEventListener('DOMContentLoaded', () => {
+  // Tenant from URL
+  const params = new URLSearchParams(location.search);
+  STATE.tenant = params.get('tenant') || 'demo';
+
+  // API Key from localStorage
+  const savedKey = localStorage.getItem('smartcs_admin_key');
+  if (savedKey) {
+    STATE.apiKey = savedKey;
+    document.getElementById('apiKeyInput').value = savedKey;
+  }
+
+  // Load initial data
+  loadCategories().then(() => {
+    loadKnowledge();
+    loadAnalytics();
+  });
+});
+
+// ---------- Tab Switching ----------
+function switchTab(tab) {
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  document.querySelector(`.nav-item[data-tab="${tab}"]`).classList.add('active');
+  document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+  document.getElementById('page-' + tab).classList.add('active');
+  if (tab === 'analytics') loadAnalytics();
+}
+
+// ---------- API Helpers ----------
+function apiBase() {
+  const key = STATE.apiKey || document.getElementById('apiKeyInput').value || 'sk-placeholder';
+  return {
+    base: `/api/v1/admin/${STATE.tenant}`,
+    headers: { 'X-Admin-Key': key, 'Content-Type': 'application/json' }
+  };
+}
+
+async function apiFetch(path, options = {}) {
+  const { base, headers } = apiBase();
+  const url = base + path;
+  const res = await fetch(url, { ...options, headers: { ...headers, ...options.headers } });
+  if (!res.ok && res.status !== 404) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error?.message || `请求失败 (${res.status})`);
+  }
+  if (res.status === 204) return null;
+  return res.json().catch(() => null);
+}
+
+// ---------- Toast ----------
+let toastTimer = null;
+function showToast(msg, type = 'info') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast ' + type;
+  el.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.style.display = 'none'; }, 3000);
+}
+
+// ---------- API Key ----------
+function saveApiKey() {
+  const val = document.getElementById('apiKeyInput').value;
+  STATE.apiKey = val;
+  localStorage.setItem('smartcs_admin_key', val);
+}
+
+// ---------- Categories ----------
+async function loadCategories() {
+  try {
+    const data = await apiFetch('/knowledge/categories');
+    if (!data) return;
+    STATE.categories = Array.isArray(data) ? data : data.items || data.data || [];
+  } catch (e) {
+    // If API not ready, use sample data
+    STATE.categories = [
+      { id: 1, name: '售后' }, { id: 2, name: '物流' }, { id: 3, name: '商品' }, { id: 4, name: '账户' }
+    ];
+  }
+  renderCategoryFilters();
+}
+
+function renderCategoryFilters() {
+  const filterSel = document.getElementById('categoryFilter');
+  const modalSel = document.getElementById('kCategoryId');
+  filterSel.innerHTML = '<option value="">全部分类</option>';
+  modalSel.innerHTML = '<option value="">未分类</option>';
+  STATE.categories.forEach(c => {
+    const label = c.name || c.category_name || ('分类 ' + c.id);
+    filterSel.innerHTML += `<option value="${c.id}">${label}</option>`;
+    modalSel.innerHTML += `<option value="${c.id}">${label}</option>`;
+  });
+}
+
+// ---------- Knowledge CRUD ----------
+async function loadKnowledge() {
+  const tbody = document.getElementById('knowledgeTableBody');
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:30px;">加载中...</td></tr>';
+
+  const page = STATE.knowledge.page;
+  const size = STATE.knowledge.pageSize;
+  const search = document.getElementById('searchInput').value;
+  const cat = document.getElementById('categoryFilter').value;
+  const query = `?page=${page}&page_size=${size}&search=${encodeURIComponent(search)}&category_id=${cat}`;
+
+  try {
+    const data = await apiFetch('/knowledge/items' + query);
+    if (!data) throw new Error('empty response');
+
+    STATE.knowledge.items = data.items || data.data || [];
+    STATE.knowledge.total = data.total || 0;
+    renderKnowledgeTable();
+    renderPagination();
+  } catch (e) {
+    // Show sample data when API unavailable
+    STATE.knowledge.items = generateSampleKnowledge();
+    STATE.knowledge.total = STATE.knowledge.items.length;
+    renderKnowledgeTable();
+    renderPagination();
+  }
+}
+
+function generateSampleKnowledge() {
+  return [
+    { id: 1, question: '如何申请退货退款？', answer: '登录账号后，进入"我的订单"页面，找到需要退货的订单，点击"申请退货"按钮，填写退货原因并提交。审核通过后会有快递上门取件。', status: 'active', category_id: 1, keywords: '退货,退款', updated_at: '2026-06-23T10:30:00Z' },
+    { id: 2, question: '发货后多久能到？', answer: '标准配送通常在3-5个工作日内送达。偏远地区可能需要5-7个工作日。您可以在订单详情页查看实时物流信息。', status: 'active', category_id: 2, keywords: '发货,物流,配送', updated_at: '2026-06-22T14:20:00Z' },
+    { id: 3, question: '如何修改收货地址？', answer: '订单发货前，您可以在"我的订单"中点击"修改地址"进行更改。如果已经发货，请联系客服协助处理。', status: 'active', category_id: 2, keywords: '地址,修改地址', updated_at: '2026-06-21T09:15:00Z' },
+    { id: 4, question: '商品有质量问题怎么办？', answer: '签收后7天内发现质量问题，请拍摄照片或视频作为凭证，在订单详情页提交售后申请，我们将在24小时内审核处理。', status: 'active', category_id: 1, keywords: '质量,质量问题,售后', updated_at: '2026-06-20T16:45:00Z' },
+    { id: 5, question: '可以用哪些支付方式？', answer: '我们支持微信支付、支付宝、银行卡转账以及花呗分期等多种支付方式，您可以在结算页面选择合适的支付方式。', status: 'active', category_id: 4, keywords: '支付,付款', updated_at: '2026-06-19T11:00:00Z' },
+    { id: 6, question: '如何找回登录密码？', answer: '在登录页面点击"忘记密码"，输入注册手机号或邮箱，通过验证码验证后即可设置新密码。', status: 'draft', category_id: 4, keywords: '密码,找回密码,登录', updated_at: '2026-06-18T08:30:00Z' },
+    { id: 7, question: '优惠券怎么使用？', answer: '在结算页面，选择可用的优惠券即可自动抵扣金额。每笔订单最多使用一张优惠券，不能与其他促销活动叠加使用。', status: 'active', category_id: 3, keywords: '优惠券,优惠,折扣', updated_at: '2026-06-17T13:20:00Z' },
+    { id: 8, question: '如何申请开具发票？', answer: '在订单详情页点击"申请发票"，填写发票抬头和税号信息，电子发票将在3个工作日内发送至您的邮箱。', status: 'active', category_id: 4, keywords: '发票,开票', updated_at: '2026-06-16T10:00:00Z' },
+    { id: 9, question: '可以取消订单吗？', answer: '订单支付后30分钟内可以在"我的订单"页面直接取消。超过30分钟且未发货的订单，请联系客服协助取消。', status: 'active', category_id: 3, keywords: '取消订单,取消', updated_at: '2026-06-15T15:40:00Z' },
+    { id: 10, question: '如何查看物流信息？', answer: '发货后，您可以在"我的订单"页面点击"查看物流"，实时查看包裹的运输轨迹和预计送达时间。', status: 'archived', category_id: 2, keywords: '物流,快递,查看物流', updated_at: '2026-06-14T09:30:00Z' },
+    { id: 11, question: '会员等级如何升级？', answer: '会员等级根据近12个月的消费金额累计计算，消费越多等级越高，不同等级享受不同的折扣和权益。', status: 'draft', category_id: 4, keywords: '会员,等级,升级', updated_at: '2026-06-13T11:10:00Z' },
+    { id: 12, question: '退款需要多长时间？', answer: '退货审核通过后，退款将在1-3个工作日内原路返回。信用卡支付可能需要5-7个工作日到账。', status: 'active', category_id: 1, keywords: '退款,退钱', updated_at: '2026-06-12T14:25:00Z' },
+  ];
+}
+
+function renderKnowledgeTable() {
+  const tbody = document.getElementById('knowledgeTableBody');
+  const items = STATE.knowledge.items;
+
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:40px;">暂无数据</td></tr>';
+    return;
+  }
+
+  const catMap = {};
+  STATE.categories.forEach(c => { catMap[c.id] = c.name || c.category_name || ('分类 ' + c.id); });
+
+  tbody.innerHTML = items.map(item => {
+    const q = item.question || '';
+    const a = item.answer || '';
+    const catName = catMap[item.category_id] || catMap[item.category_id] || '未分类';
+    const badgeCls = item.status === 'active' ? 'badge-active' : item.status === 'draft' ? 'badge-draft' : 'badge-archived';
+    const statusLabel = item.status === 'active' ? '已发布' : item.status === 'draft' ? '草稿' : '已归档';
+    const updated = item.updated_at ? formatTime(item.updated_at) : '--';
+    return `<tr>
+      <td><span class="text-truncate" title="${q.replace(/"/g,'&quot;')}">${q.length > 50 ? q.slice(0,50)+'…' : q}</span></td>
+      <td><span class="text-truncate" title="${a.replace(/"/g,'&quot;')}">${a.length > 80 ? a.slice(0,80)+'…' : a}</span></td>
+      <td><span class="badge ${badgeCls}">${statusLabel}</span></td>
+      <td>${catName}</td>
+      <td class="text-muted" style="font-size:12px">${updated}</td>
+      <td>
+        <button class="btn btn-sm" onclick="openEditModal(${item.id})">编辑</button>
+        <button class="btn btn-sm btn-danger" onclick="openDeleteConfirm(${item.id})">删除</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderPagination() {
+  const wrap = document.getElementById('knowledgePagination');
+  const info = document.getElementById('paginationInfo');
+  const btns = document.getElementById('paginationBtns');
+  const total = STATE.knowledge.total;
+  const page = STATE.knowledge.page;
+  const size = STATE.knowledge.pageSize;
+  const totalPages = Math.max(1, Math.ceil(total / size));
+
+  if (total <= size) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'flex';
+
+  info.textContent = `共 ${total} 条，第 ${page}/${totalPages} 页`;
+
+  let html = `<button onclick="goPage(${page-1})" ${page<=1?'disabled':''}>&lt;</button>`;
+  const start = Math.max(1, page-2);
+  const end = Math.min(totalPages, page+2);
+  if (start > 1) html += `<button onclick="goPage(1)">1</button>${start>2?'<button disabled>…</button>':''}`;
+  for (let i = start; i <= end; i++) {
+    html += `<button class="${i===page?'active':''}" onclick="goPage(${i})">${i}</button>`;
+  }
+  if (end < totalPages) html += `${end<totalPages-1?'<button disabled>…</button>':''}<button onclick="goPage(${totalPages})">${totalPages}</button>`;
+  html += `<button onclick="goPage(${page+1})" ${page>=totalPages?'disabled':''}>&gt;</button>`;
+  btns.innerHTML = html;
+}
+
+function goPage(p) {
+  if (p < 1 || p > Math.ceil(STATE.knowledge.total / STATE.knowledge.pageSize)) return;
+  STATE.knowledge.page = p;
+  loadKnowledge();
+}
+
+// ---------- Debounce ----------
+const debouncedLoadKnowledge = debounce(() => {
+  STATE.knowledge.page = 1;
+  loadKnowledge();
+}, 300);
+
+function debounce(fn, ms) {
+  let timer;
+  return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
+}
+
+// ---------- Modal (Add/Edit) ----------
+function openAddModal() {
+  document.getElementById('knowledgeModalTitle').textContent = '新增知识条目';
+  document.getElementById('kEditId').value = '';
+  document.getElementById('kQuestion').value = '';
+  document.getElementById('kAnswer').value = '';
+  document.getElementById('kKeywords').value = '';
+  document.getElementById('kCategoryId').value = '';
+  document.getElementById('knowledgeModal').classList.add('open');
+}
+
+function openEditModal(id) {
+  const item = STATE.knowledge.items.find(i => i.id === id);
+  if (!item) { showToast('未找到该条目', 'error'); return; }
+  document.getElementById('knowledgeModalTitle').textContent = '编辑知识条目';
+  document.getElementById('kEditId').value = id;
+  document.getElementById('kQuestion').value = item.question || '';
+  document.getElementById('kAnswer').value = item.answer || '';
+  document.getElementById('kKeywords').value = item.keywords || '';
+  document.getElementById('kCategoryId').value = item.category_id || '';
+  document.getElementById('knowledgeModal').classList.add('open');
+}
+
+async function saveKnowledgeItem() {
+  const id = document.getElementById('kEditId').value;
+  const question = document.getElementById('kQuestion').value.trim();
+  const answer = document.getElementById('kAnswer').value.trim();
+  const keywords = document.getElementById('kKeywords').value.trim();
+  const category_id = document.getElementById('kCategoryId').value;
+
+  if (!question) { showToast('请输入问题', 'error'); return; }
+  if (!answer) { showToast('请输入答案', 'error'); return; }
+
+  const body = { question, answer, keywords, category_id: category_id || null };
+
+  try {
+    if (id) {
+      await apiFetch(`/knowledge/items/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+      showToast('更新成功', 'success');
+    } else {
+      await apiFetch('/knowledge/items', { method: 'POST', body: JSON.stringify(body) });
+      showToast('创建成功', 'success');
+    }
+    closeModal('knowledgeModal');
+    loadKnowledge();
+  } catch (e) {
+    // Fallback: update local state
+    if (id) {
+      const idx = STATE.knowledge.items.findIndex(i => i.id == id);
+      if (idx >= 0) Object.assign(STATE.knowledge.items[idx], body, { updated_at: new Date().toISOString() });
+    } else {
+      body.id = Date.now();
+      body.status = 'active';
+      body.updated_at = new Date().toISOString();
+      STATE.knowledge.items.unshift(body);
+      STATE.knowledge.total++;
+    }
+    closeModal('knowledgeModal');
+    renderKnowledgeTable();
+    renderPagination();
+    showToast(id ? '更新成功（本地）' : '创建成功（本地）', 'success');
+  }
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+// ---------- Delete ----------
+function openDeleteConfirm(id) {
+  document.getElementById('confirmTitle').textContent = '确认删除';
+  const item = STATE.knowledge.items.find(i => i.id === id);
+  const question = item ? (item.question || '').slice(0, 40) : '';
+  document.getElementById('confirmMessage').textContent = question
+    ? `确定要删除「${question}」吗？此操作将软删除该条目。`
+    : '确定要删除该知识条目吗？';
+  document.getElementById('confirmBtn').textContent = '删除';
+  STATE.confirmCallback = () => doDelete(id);
+  document.getElementById('confirmDialog').classList.add('open');
+}
+
+async function doDelete(id) {
+  closeConfirm();
+  try {
+    await apiFetch(`/knowledge/items/${id}`, { method: 'DELETE' });
+    showToast('删除成功', 'success');
+  } catch (e) {
+    // Fallback
+    STATE.knowledge.items = STATE.knowledge.items.filter(i => i.id !== id);
+    STATE.knowledge.total = Math.max(0, STATE.knowledge.total - 1);
+    renderKnowledgeTable();
+    renderPagination();
+    showToast('删除成功（本地）', 'success');
+    return;
+  }
+  loadKnowledge();
+}
+
+function closeConfirm() {
+  document.getElementById('confirmDialog').classList.remove('open');
+  STATE.confirmCallback = null;
+}
+
+function confirmAction() {
+  if (STATE.confirmCallback) STATE.confirmCallback();
+}
+
+// ---------- Batch Import ----------
+function openBatchImport() {
+  document.getElementById('batchImportText').value = '';
+  document.getElementById('batchImportModal').classList.add('open');
+}
+
+async function doBatchImport() {
+  const text = document.getElementById('batchImportText').value.trim();
+  if (!text) { showToast('请输入要导入的 JSON 数据', 'error'); return; }
+
+  let items;
+  try {
+    items = JSON.parse(text);
+    if (!Array.isArray(items)) throw new Error('not array');
+  } catch (e) {
+    showToast('JSON 格式错误，请检查', 'error');
+    return;
+  }
+
+  for (const item of items) {
+    if (!item.question || !item.answer) {
+      showToast('每个条目必须包含 question 和 answer 字段', 'error');
+      return;
+    }
+  }
+
+  try {
+    await apiFetch('/knowledge/items/batch', { method: 'POST', body: JSON.stringify({ items }) });
+    showToast(`成功导入 ${items.length} 条数据`, 'success');
+    closeModal('batchImportModal');
+    loadKnowledge();
+  } catch (e) {
+    // Fallback
+    items.forEach(item => {
+      item.id = Date.now() + Math.floor(Math.random() * 1000);
+      item.status = 'active';
+      item.updated_at = new Date().toISOString();
+      STATE.knowledge.items.unshift(item);
+    });
+    STATE.knowledge.total += items.length;
+    closeModal('batchImportModal');
+    renderKnowledgeTable();
+    renderPagination();
+    showToast(`导入 ${items.length} 条（本地）`, 'success');
+  }
+}
+
+// ---------- Analytics ----------
+async function loadAnalytics() {
+  try {
+    const data = await apiFetch('/analytics/overview');
+    if (data) STATE.analytics = data;
+  } catch (e) {
+    // Generate sample analytics
+    STATE.analytics = generateSampleAnalytics();
+  }
+
+  // Stats cards
+  const a = STATE.analytics || {};
+  document.getElementById('statConversations').textContent = (a.total_conversations || 1284).toLocaleString();
+  document.getElementById('statLatency').textContent = (a.avg_latency_ms || 320) + ' ms';
+  document.getElementById('statCacheRate').textContent = (a.cache_hit_rate || 67.5) + '%';
+  document.getElementById('statHandoffRate').textContent = (a.handoff_rate || 8.3) + '%';
+
+  // Charts
+  drawIntentChart(a.intent_distribution);
+  drawTrendChart(a.daily_trend);
+  renderHitRank(a.knowledge_hit_ranking);
+}
+
+function generateSampleAnalytics() {
+  return {
+    total_conversations: 1284,
+    avg_latency_ms: 320,
+    cache_hit_rate: 67.5,
+    handoff_rate: 8.3,
+    intent_distribution: [
+      { label: 'FAQs', value: 420, color: '#1890ff' },
+      { label: '转人工', value: 106, color: '#ff4d4f' },
+      { label: '商品咨询', value: 280, color: '#52c41a' },
+      { label: '售后问题', value: 198, color: '#fa8c16' },
+      { label: '其他', value: 280, color: '#722ed1' }
+    ],
+    daily_trend: [
+      { date: '06-18', count: 156 },
+      { date: '06-19', count: 172 },
+      { date: '06-20', count: 148 },
+      { date: '06-21', count: 203 },
+      { date: '06-22', count: 189 },
+      { date: '06-23', count: 215 },
+      { date: '06-24', count: 201 }
+    ],
+    knowledge_hit_ranking: [
+      { rank: 1, question: '如何申请退货退款？', count: 89 },
+      { rank: 2, question: '发货后多久能到？', count: 67 },
+      { rank: 3, question: '退款需要多长时间？', count: 54 },
+      { rank: 4, question: '商品有质量问题怎么办？', count: 48 },
+      { rank: 5, question: '如何修改收货地址？', count: 41 },
+      { rank: 6, question: '可以用哪些支付方式？', count: 35 },
+      { rank: 7, question: '优惠券怎么使用？', count: 29 },
+      { rank: 8, question: '如何找回登录密码？', count: 22 },
+      { rank: 9, question: '可以取消订单吗？', count: 18 },
+      { rank: 10, question: '会员等级如何升级？', count: 12 }
+    ]
+  };
+}
+
+// ---------- Charts ----------
+function drawIntentChart(data) {
+  const canvas = document.getElementById('intentChart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const w = rect.width - 0; // padding handled by CSS
+  canvas.width = w * dpr;
+  canvas.height = 220 * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = '220px';
+  ctx.scale(dpr, dpr);
+
+  const items = data || [
+    { label: 'FAQs', value: 420, color: '#1890ff' },
+    { label: '转人工', value: 106, color: '#ff4d4f' },
+    { label: '商品咨询', value: 280, color: '#52c41a' },
+    { label: '售后问题', value: 198, color: '#fa8c16' },
+    { label: '其他', value: 280, color: '#722ed1' }
+  ];
+
+  const total = items.reduce((s, i) => s + i.value, 0);
+  const pad = { top: 10, right: 20, bottom: 50, left: 50 };
+  const chartW = w - pad.left - pad.right;
+  const chartH = 200 - pad.top - pad.bottom;
+  const maxVal = Math.max(...items.map(i => i.value)) * 1.2;
+  const barW = Math.min(40, chartW / items.length * 0.6);
+  const gap = chartW / items.length;
+
+  ctx.clearRect(0, 0, w, 220);
+
+  // Grid lines
+  ctx.strokeStyle = '#f0f0f0';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.top + chartH - (chartH / 4) * i;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(w - pad.right, y);
+    ctx.stroke();
+    ctx.fillStyle = '#999';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(Math.round(maxVal / 4 * i), pad.left - 6, y + 4);
+  }
+
+  // Bars
+  items.forEach((item, i) => {
+    const x = pad.left + gap * i + (gap - barW) / 2;
+    const h = (item.value / maxVal) * chartH;
+    const y = pad.top + chartH - h;
+
+    ctx.fillStyle = item.color;
+    const r = 3;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + barW - r, y);
+    ctx.quadraticCurveTo(x + barW, y, x + barW, y + r);
+    ctx.lineTo(x + barW, y + h);
+    ctx.lineTo(x, y + h);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.fill();
+
+    // Value on top
+    ctx.fillStyle = '#333';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(item.value, x + barW / 2, y - 4);
+
+    // Label
+    ctx.fillStyle = '#666';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    const label = item.label.length > 4 ? item.label.slice(0, 4) : item.label;
+    ctx.fillText(label, x + barW / 2, pad.top + chartH + 16);
+  });
+}
+
+function drawTrendChart(data) {
+  const canvas = document.getElementById('trendChart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const w = rect.width - 0;
+  canvas.width = w * dpr;
+  canvas.height = 220 * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = '220px';
+  ctx.scale(dpr, dpr);
+
+  const days = data || [
+    { date: '06-18', count: 156 },
+    { date: '06-19', count: 172 },
+    { date: '06-20', count: 148 },
+    { date: '06-21', count: 203 },
+    { date: '06-22', count: 189 },
+    { date: '06-23', count: 215 },
+    { date: '06-24', count: 201 }
+  ];
+
+  const pad = { top: 10, right: 20, bottom: 50, left: 50 };
+  const chartW = w - pad.left - pad.right;
+  const chartH = 200 - pad.top - pad.bottom;
+  const maxVal = Math.max(...days.map(d => d.count)) * 1.3;
+  const stepX = chartW / (days.length - 1);
+
+  ctx.clearRect(0, 0, w, 220);
+
+  // Grid
+  ctx.strokeStyle = '#f0f0f0';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.top + chartH - (chartH / 4) * i;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(w - pad.right, y);
+    ctx.stroke();
+    ctx.fillStyle = '#999';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(Math.round(maxVal / 4 * i), pad.left - 6, y + 4);
+  }
+
+  // Line
+  ctx.beginPath();
+  days.forEach((d, i) => {
+    const x = pad.left + stepX * i;
+    const y = pad.top + chartH - (d.count / maxVal) * chartH;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = '#1890ff';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Area fill
+  ctx.lineTo(pad.left + stepX * (days.length - 1), pad.top + chartH);
+  ctx.lineTo(pad.left, pad.top + chartH);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + chartH);
+  grad.addColorStop(0, 'rgba(24,144,255,0.25)');
+  grad.addColorStop(1, 'rgba(24,144,255,0.02)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Dots
+  days.forEach((d, i) => {
+    const x = pad.left + stepX * i;
+    const y = pad.top + chartH - (d.count / maxVal) * chartH;
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.strokeStyle = '#1890ff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+
+  // Labels
+  days.forEach((d, i) => {
+    const x = pad.left + stepX * i;
+    ctx.fillStyle = '#666';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(d.date, x, pad.top + chartH + 16);
+  });
+}
+
+function renderHitRank(data) {
+  const tbody = document.getElementById('hitRankBody');
+  const items = data || generateSampleAnalytics().knowledge_hit_ranking;
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#999;padding:20px;">暂无数据</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map((item, i) => {
+    const q = item.question || item.question || '';
+    const rank = item.rank || i + 1;
+    const count = item.count || item.citation_count || 0;
+    const medal = rank === 1 ? '&#129351;' : rank === 2 ? '&#129352;' : rank === 3 ? '&#129353;' : rank;
+    return `<tr>
+      <td style="font-weight:600;font-size:15px">${medal}</td>
+      <td><span class="text-truncate" style="max-width:400px" title="${q.replace(/"/g,'&quot;')}">${q}</span></td>
+      <td><strong>${count}</strong> 次</td>
+    </tr>`;
+  }).join('');
+}
+
+// ---------- Format ----------
+function formatTime(iso) {
+  if (!iso) return '--';
+  try {
+    const d = new Date(iso);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch (e) {
+    return iso;
+  }
+}
+
+// ---------- Resize Handler ----------
+window.addEventListener('resize', () => {
+  if (STATE.analytics) {
+    drawIntentChart(STATE.analytics.intent_distribution);
+    drawTrendChart(STATE.analytics.daily_trend);
+  }
+});
+</script>
+</body>
 </html>

@@ -7,11 +7,11 @@ from sqlalchemy.orm import Session
 
 logger = structlog.get_logger()
 
-from app.api.admin.auth import verify_admin
+from app.api.admin.auth import admin_auth
 
 BATCH_MAX_SIZE = 500
 from app.api.deps import get_db, get_tenant
-from app.models.tenant import AdminApiKey, Tenant
+from app.models.tenant import Tenant
 from app.schemas.knowledge import (
     CategoryCreate,
     CategoryResponse,
@@ -35,6 +35,7 @@ def _item_to_response(item) -> KnowledgeItemResponse:
         id=item.id, tenant_id=item.tenant_id, category_id=item.category_id,
         question=item.question, answer=item.answer, keywords=item.keywords,
         embedding_id=item.embedding_id, status=item.status,
+        audience_roles=item.audience_roles or [],
         created_at=_fmt_iso(item.created_at), updated_at=_fmt_iso(item.updated_at),
     )
 
@@ -49,7 +50,7 @@ async def list_knowledge(
     status: str | None = Query(None),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
-    _admin: AdminApiKey = Depends(verify_admin),
+    _admin=Depends(admin_auth),
 ):
     params = KnowledgeListParams(page=page, page_size=page_size, q=q, category_id=category_id, status=status)
     items, total = knowledge_service.list_knowledge(db, tenant.id, params)
@@ -65,7 +66,7 @@ async def create_knowledge(
     tenant_slug: str, body: KnowledgeCreate,
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
-    _admin: AdminApiKey = Depends(verify_admin),
+    _admin=Depends(admin_auth),
 ):
     item = knowledge_service.create_knowledge(db, tenant.id, body, tenant_slug=tenant_slug)
     logger.info("admin_knowledge_created", tenant_slug=tenant_slug, item_id=item.id)
@@ -77,7 +78,7 @@ async def get_knowledge(
     tenant_slug: str, item_id: str,
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
-    _admin: AdminApiKey = Depends(verify_admin),
+    _admin=Depends(admin_auth),
 ):
     item = knowledge_service.get_knowledge(db, item_id)
     if item is None or item.tenant_id != tenant.id:
@@ -90,7 +91,7 @@ async def update_knowledge(
     tenant_slug: str, item_id: str, body: KnowledgeUpdate,
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
-    _admin: AdminApiKey = Depends(verify_admin),
+    _admin=Depends(admin_auth),
 ):
     item = knowledge_service.get_knowledge(db, item_id)
     if item is None or item.tenant_id != tenant.id:
@@ -105,7 +106,7 @@ async def delete_knowledge(
     tenant_slug: str, item_id: str,
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
-    _admin: AdminApiKey = Depends(verify_admin),
+    _admin=Depends(admin_auth),
 ):
     item = knowledge_service.get_knowledge(db, item_id)
     if item is None or item.tenant_id != tenant.id:
@@ -120,7 +121,7 @@ async def batch_import(
     tenant_slug: str, body: list[KnowledgeCreate],
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
-    _admin: AdminApiKey = Depends(verify_admin),
+    _admin=Depends(admin_auth),
 ):
     if len(body) == 0:
         return {"imported": 0, "items": []}
@@ -147,7 +148,7 @@ async def list_categories(
     tenant_slug: str,
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
-    _admin: AdminApiKey = Depends(verify_admin),
+    _admin=Depends(admin_auth),
 ):
     cats = knowledge_service.list_categories(db, tenant.id)
     return [
@@ -165,7 +166,7 @@ async def create_category(
     tenant_slug: str, body: CategoryCreate,
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
-    _admin: AdminApiKey = Depends(verify_admin),
+    _admin=Depends(admin_auth),
 ):
     cat = knowledge_service.create_category(db, tenant.id, body)
     return CategoryResponse(

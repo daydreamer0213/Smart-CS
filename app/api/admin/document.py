@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session
 
 logger = structlog.get_logger()
 
-from app.api.admin.auth import verify_admin
+from app.api.admin.auth import admin_auth
 from app.api.deps import get_db, get_tenant
-from app.models.tenant import AdminApiKey, Tenant
+from app.models.tenant import Tenant
 from app.schemas.document import (
     DocumentChunkResponse,
     DocumentListResponse,
@@ -29,7 +29,7 @@ async def upload(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
-    _admin: AdminApiKey = Depends(verify_admin),
+    _admin=Depends(admin_auth),
 ):
     if file.filename is None:
         raise HTTPException(400, "No filename provided")
@@ -67,7 +67,7 @@ async def list_docs(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
-    _admin: AdminApiKey = Depends(verify_admin),
+    _admin=Depends(admin_auth),
 ):
     items, total = document_service.list_documents(db, tenant.id, page, page_size)
     resp_items = []
@@ -91,7 +91,7 @@ async def list_chunks(
     tenant_slug: str, document_id: str,
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
-    _admin: AdminApiKey = Depends(verify_admin),
+    _admin=Depends(admin_auth),
 ):
     doc = document_service.get_document(db, tenant.id, document_id)
     if doc is None:
@@ -114,7 +114,7 @@ async def delete_doc(
     tenant_slug: str, document_id: str,
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
-    _admin: AdminApiKey = Depends(verify_admin),
+    _admin=Depends(admin_auth),
 ):
     doc = document_service.get_document(db, tenant.id, document_id)
     if doc is None:

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SmartCS CRM 销售运营助手</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f6f8fb;color:#172033;font:14px system-ui,"Microsoft YaHei",sans-serif}main{max-width:980px;margin:auto;padding:24px}.card{background:#fff;border:1px solid #dce3ee;border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 1px 2px #0000000d}h1{font-size:22px;margin:0 0 6px}h2{font-size:16px;margin:0 0 10px}.muted{color:#687386}input,select,button{font:inherit;padding:9px;border:1px solid #cbd5e1;border-radius:7px}input,select{width:100%;margin:4px 0 9px}button{cursor:pointer;background:#175cd3;color:white;border:0}button.secondary{background:#e9eef7;color:#172033}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}.hidden{display:none}#result{white-space:pre-wrap;background:#101828;color:#d0d5dd;padding:12px;border-radius:8px;min-height:56px}.item{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #eef2f6}.warn{color:#b54708}.ok{color:#067647}
+</style>
+<main>
+  <h1>CRM 销售运营助手</h1>
+  <p class="muted">客户事实来自本地模拟 CRM；写操作必须先生成草稿，再由当前用户确认。</p>
+
+  <section class="card" id="loginCard">
+    <h2>登录</h2><div class="grid"><label>租户<input id="tenant" value="demo"></label><label>邮箱<input id="email" type="email"></label><label>密码<input id="password" type="password"></label></div>
+    <button onclick="login()">登录业务助手</button> <span id="loginStatus" class="muted"></span>
+  </section>
+
+  <section class="card hidden" id="app">
+    <h2>对话查询</h2>
+    <div class="grid"><label>输入“查询客户 华东”或客户名称<input id="query" value="查询客户 华东"></label><div><br><button onclick="searchCustomers()">查询客户</button></div></div>
+    <div id="customers"></div><div id="overview"></div>
+  </section>
+
+  <section class="card hidden" id="actions">
+    <h2>从对话发起受控操作</h2>
+    <p class="muted">演示页将已提取的字段提交为操作草稿；后端仍会做 schema、权限和查重校验。</p>
+    <div class="grid">
+      <form onsubmit="createLead(event)"><b>创建线索</b><input id="leadCompany" placeholder="公司" required><input id="leadName" placeholder="联系人" required><input id="leadEmail" type="email" placeholder="联系人邮箱" required><select id="leadSource"><option value="website">官网</option><option value="referral">转介绍</option><option value="event">活动</option><option value="manual">手工</option></select><button>生成线索草稿</button></form>
+      <form onsubmit="createTask(event)"><b>创建跟进任务</b><select id="taskType"><option value="customer">客户</option><option value="lead">线索</option><option value="opportunity">商机</option></select><input id="taskRelated" placeholder="关联对象 ID" required><input id="taskTitle" placeholder="任务标题" required><input id="taskDue" type="date" required><button>生成任务草稿</button></form>
+    </div>
+    <div id="draft" class="hidden"><hr><b>待确认：</b><span id="draftSummary"></span><br><button onclick="confirmDraft()">确认执行</button> <button class="secondary" onclick="cancelDraft()">取消</button></div>
+  </section>
+
+  <section class="card"><h2>结果</h2><div id="result">请先登录。</div></section>
+</main>
+<script>
+let token='', tenant='', draft=null;
+const byId=id=>document.getElementById(id), escapeHtml=value=>String(value).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+const result=(value,cls='')=>{const el=document.querySelector('#result');el.className=cls;el.textContent=typeof value==='string'?value:JSON.stringify(value,null,2)};
+async function api(path, options={}) { const r=await fetch(path,{...options,headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`,...options.headers}}); const data=await r.json(); if(!r.ok) throw new Error(data.error?.message?.message||data.error?.message||'请求失败'); return data; }
+async function login(){tenant=byId('tenant').value.trim();try{const data=await api('/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tenant_slug:tenant,email:byId('email').value,password:byId('password').value})});token=data.access_token;byId('loginStatus').textContent=`已登录：${data.user.display_name}（${data.user.role}）`;byId('app').classList.remove('hidden');byId('actions').classList.remove('hidden');result('已登录。可先查询“华东”。','ok')}catch(e){result(e.message,'warn')}}
+async function searchCustomers(){try{const data=await api(`/api/v1/${tenant}/business/chat`,{method:'POST',body:JSON.stringify({message:byId('query').value})});byId('customers').innerHTML=data.customers.map(x=>`<div class="item"><span>${escapeHtml(x.name)} · ${escapeHtml(x.industry)} · ${escapeHtml(x.level)}</span><button onclick="showCustomer('${x.id}')">查看全貌</button></div>`).join('')||'<p class="muted">无匹配客户</p>';result(data.reply)}catch(e){result(e.message,'warn')}}
+async function showCustomer(id){try{const data=await api(`/api/v1/${tenant}/business/chat`,{method:'POST',body:JSON.stringify({message:'查询客户',customer_id:id})});byId('overview').innerHTML=`<h3>${escapeHtml(data.customer_overview.customer.name)}</h3><pre></pre>`;byId('overview').querySelector('pre').textContent=JSON.stringify(data.customer_overview,null,2);byId('taskRelated').value=id;byId('taskType').value='customer';result(data.reply,'ok')}catch(e){result(e.message,'warn')}}
+async function sendCommand(command){try{const data=await api(`/api/v1/${tenant}/business/chat`,{method:'POST',body:JSON.stringify({message:'发起业务操作',command})});draft=data.pending_action;byId('draftSummary').textContent=draft.summary;byId('draft').classList.remove('hidden');result(data.reply,'ok')}catch(e){result(e.message,'warn')}}
+function createLead(e){e.preventDefault();sendCommand({action:'create_lead',payload:{company:byId('leadCompany').value,contact_name:byId('leadName').value,contact_email:byId('leadEmail').value,source:byId('leadSource').value}})}
+function createTask(e){e.preventDefault();sendCommand({action:'create_follow_up_task',payload:{related_type:byId('taskType').value,related_id:byId('taskRelated').value,title:byId('taskTitle').value,due_date:byId('taskDue').value}})}
+async function confirmDraft(){if(!draft)return;try{const data=await api(`/api/v1/${tenant}/business/action-drafts/${draft.id}/confirm`,{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()}});result(data,'ok');cancelDraft()}catch(e){result(e.message,'warn')}}
+function cancelDraft(){draft=null;byId('draft').classList.add('hidden')}
+</script>
+</html>

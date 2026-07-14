@@ -31,8 +31,6 @@ def register_error_handlers(app: FastAPI) -> None:
             method=request.method,
             path=request.url.path,
             error_type=type(exc).__name__,
-            error=str(exc),
-            exc_info=True,
         )
         return JSONResponse(
             status_code=500,

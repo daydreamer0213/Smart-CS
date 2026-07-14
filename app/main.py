@@ -16,6 +16,9 @@ from app.api.admin.analytics import router as admin_analytics_router
 from app.api.admin.auth import router as admin_auth_router
 from app.api.admin.document import router as admin_document_router
 from app.api.admin.knowledge import router as admin_knowledge_router
+from app.api.auth import router as auth_router
+from app.api.assistant import router as assistant_router
+from app.api.business import router as business_router
 from app.api.chat import router as chat_router
 from app.api.health import router as health_router
 from app.config import settings
@@ -70,7 +73,9 @@ async def lifespan(_app: FastAPI):
             if demo_tenant:
                 from app.models.knowledge import KnowledgeItem
                 if db.query(KnowledgeItem).filter(KnowledgeItem.tenant_id == demo_tenant.id).count() == 0:
-                    faq_path = _PROJECT_ROOT / "data" / "seed" / "faq_template.json"
+                    faq_path = _PROJECT_ROOT / "data" / "seed" / "enterprise_knowledge.json"
+                    if not faq_path.exists():
+                        faq_path = _PROJECT_ROOT / "data" / "seed" / "faq_template.json"
                     if faq_path.exists():
                         with open(faq_path, encoding="utf-8") as f:
                             faq_items = json.load(f)
@@ -83,6 +88,10 @@ async def lifespan(_app: FastAPI):
                                 status="active",
                             ))
                         db.commit()
+        demo_tenant = db.query(Tenant).filter(Tenant.slug == "demo").first()
+        if demo_tenant:
+            from app.services.business_service import seed_demo_crm
+            seed_demo_crm(db, demo_tenant.id)
     finally:
         db.close()
 
@@ -165,6 +174,9 @@ def create_app() -> FastAPI:
 
     # 4. Include API routers
     app.include_router(health_router)
+    app.include_router(auth_router)
+    app.include_router(assistant_router)
+    app.include_router(business_router)
     app.include_router(chat_router)
     app.include_router(admin_auth_router)
     app.include_router(admin_document_router)

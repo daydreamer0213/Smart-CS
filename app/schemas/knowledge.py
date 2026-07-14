@@ -10,6 +10,7 @@ class KnowledgeCreate(BaseModel):
     answer: str = Field(..., min_length=1, max_length=5000)
     keywords: str | None = Field(None, max_length=500)
     category_id: str | None = None
+    audience_roles: list[Literal["owner", "admin", "agent", "employee"]] = Field(default_factory=list)
 
 
 class KnowledgeUpdate(BaseModel):
@@ -18,6 +19,7 @@ class KnowledgeUpdate(BaseModel):
     keywords: str | None = Field(None, max_length=500)
     category_id: str | None = None
     status: Literal["active", "draft", "archived"] | None = None
+    audience_roles: list[Literal["owner", "admin", "agent", "employee"]] | None = None
 
 
 class KnowledgeItemResponse(BaseModel):
@@ -29,6 +31,7 @@ class KnowledgeItemResponse(BaseModel):
     keywords: str | None
     embedding_id: str | None
     status: str
+    audience_roles: list[str]
     created_at: str
     updated_at: str
 

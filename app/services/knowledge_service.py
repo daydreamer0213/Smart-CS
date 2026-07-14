@@ -164,6 +164,7 @@ def create_knowledge(
         answer=data.answer,
         keywords=data.keywords or "",
         status="active",
+        audience_roles=data.audience_roles,
     )
     db.add(item)
 

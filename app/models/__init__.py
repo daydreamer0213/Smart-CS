@@ -3,6 +3,8 @@ from app.models.tenant import AdminApiKey, Tenant
 from app.models.knowledge import Category, KnowledgeItem
 from app.models.document import Document, DocumentChunk
 from app.models.conversation import Conversation, Message
+from app.models.user import User
+from app.models.crm import ActionDraft, AuditLog, Contact, Customer, FollowUpTask, Lead, Opportunity
 
 __all__ = [
     "Base",
@@ -15,4 +17,12 @@ __all__ = [
     "DocumentChunk",
     "Conversation",
     "Message",
+    "User",
+    "Customer",
+    "Contact",
+    "Lead",
+    "Opportunity",
+    "FollowUpTask",
+    "ActionDraft",
+    "AuditLog",
 ]

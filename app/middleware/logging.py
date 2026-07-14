@@ -59,25 +59,30 @@ def setup_structlog(log_level: str = "INFO", log_dir: str = "logs") -> None:
 class LoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         rid = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-        request_id_var.set(rid)
+        request_token = request_id_var.set(rid)
+        structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=rid)
 
         logger = structlog.get_logger()
         start = time.monotonic()
-        logger.info(
-            "request_started", method=request.method, path=request.url.path
-        )
+        try:
+            logger.info(
+                "request_started", method=request.method, path=request.url.path
+            )
 
-        response = await call_next(request)
+            response = await call_next(request)
 
-        elapsed_ms = (time.monotonic() - start) * 1000
-        logger.info(
-            "request_completed",
-            method=request.method,
-            path=request.url.path,
-            status_code=response.status_code,
-            elapsed_ms=round(elapsed_ms, 2),
-        )
+            elapsed_ms = (time.monotonic() - start) * 1000
+            logger.info(
+                "request_completed",
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+                elapsed_ms=round(elapsed_ms, 2),
+            )
 
-        response.headers["X-Request-ID"] = rid
-        return response
+            response.headers["X-Request-ID"] = rid
+            return response
+        finally:
+            request_id_var.reset(request_token)
+            structlog.contextvars.clear_contextvars()

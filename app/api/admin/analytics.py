@@ -10,9 +10,9 @@ Endpoints:
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.api.admin.auth import verify_admin
+from app.api.admin.auth import admin_auth
 from app.api.deps import get_db, get_tenant
-from app.models.tenant import AdminApiKey, Tenant
+from app.models.tenant import Tenant
 from app.services import analytics_service
 
 router = APIRouter()
@@ -24,7 +24,7 @@ async def analytics_overview(
     days: int = Query(7, ge=1, le=365),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
-    _admin: AdminApiKey = Depends(verify_admin),
+    _admin=Depends(admin_auth),
 ):
     """Dashboard overview: conversation count, avg latency, cache hit rate, handoff rate."""
     return analytics_service.get_overview(db, tenant.id, days)
@@ -36,7 +36,7 @@ async def analytics_intents(
     days: int = Query(7, ge=1, le=365),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
-    _admin: AdminApiKey = Depends(verify_admin),
+    _admin=Depends(admin_auth),
 ):
     """Intent distribution for the given period."""
     return analytics_service.get_intent_distribution(db, tenant.id, days)
@@ -48,7 +48,7 @@ async def analytics_daily(
     days: int = Query(7, ge=1, le=365),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
-    _admin: AdminApiKey = Depends(verify_admin),
+    _admin=Depends(admin_auth),
 ):
     """Daily message trend with cache hit breakdown."""
     return analytics_service.get_daily_trend(db, tenant.id, days)
@@ -61,7 +61,7 @@ async def analytics_knowledge(
     limit: int = Query(10, ge=1, le=100),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
-    _admin: AdminApiKey = Depends(verify_admin),
+    _admin=Depends(admin_auth),
 ):
     """Top-K knowledge items by query frequency."""
     return analytics_service.get_top_knowledge(db, tenant.id, days, limit)

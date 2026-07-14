@@ -1,23 +1,35 @@
-"""End-to-end chat flow tests with seeded knowledge."""
+"""End-to-end chat route smoke tests."""
+
+from app.schemas.chat import ChatResponse
 
 
 async def test_chat_endpoint_exists(admin_client, test_tenant):
-    """Verify the chat endpoint is reachable (returns 401 without auth or success)."""
+    """Verify the chat endpoint is reachable."""
     response = await admin_client.post(
         f"/api/v1/{test_tenant.slug}/chat",
         json={"session_id": "test-session", "message": "hello"},
     )
-    # Without real LLM API, we expect either 200 (if pipeline works) or 500 (LLM error)
     assert response.status_code in (200, 401, 500)
 
 
-async def test_chat_without_llm_returns_handoff(client, test_tenant):
-    """When no LLM available, human-keyword-triggered input should be handled."""
+async def test_chat_without_llm_returns_handoff(client, test_tenant, monkeypatch):
+    """Verify the non-streaming route shape without touching a real LLM."""
+    async def fake_process_chat(tenant, db, session_id, message):
+        return ChatResponse(
+            answer="human handoff",
+            intent="human",
+            confidence=1.0,
+            sources=[],
+            cache_hit="miss",
+            session_id=session_id,
+            handoff=True,
+        )
+
+    monkeypatch.setattr("app.api.chat.process_chat", fake_process_chat)
+
     response = await client.post(
         f"/api/v1/{test_tenant.slug}/chat",
-        json={"session_id": "", "message": "我要投诉"},
+        json={"session_id": "", "message": "human please"},
     )
-    # Without LLM, the rule-based classifier should detect human intent
-    # But the full pipeline needs the retrieval singletons which won't be initialized in tests
-    # This test just verifies the route exists and handles requests
-    assert response.status_code in (200, 404, 500)
+    assert response.status_code == 200
+    assert response.json()["handoff"] is True

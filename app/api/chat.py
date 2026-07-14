@@ -13,7 +13,7 @@ from app.services.chat_service import process_chat, process_chat_stream
 router = APIRouter()
 
 
-@router.post("/api/v1/{tenant_slug}/chat")
+@router.post("/api/v1/{tenant_slug}/chat", deprecated=True)
 async def chat(
     request: Request,
     body: ChatRequest,
@@ -31,7 +31,7 @@ async def chat(
     )
 
 
-@router.get("/api/v1/{tenant_slug}/chat/stream")
+@router.get("/api/v1/{tenant_slug}/chat/stream", deprecated=True)
 async def chat_stream(
     request: Request,
     session_id: str = Query(""),

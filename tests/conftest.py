@@ -70,6 +70,7 @@ rm.set_embedding_provider(_FakeEmbeddingProvider())
 # the LLM client (which happens before ``classify_intent`` is invoked).
 if not settings.llm_api_key:
     settings.llm_api_key = "sk-test-dummy"
+settings.jwt_secret = "test-jwt-secret"
 
 
 @pytest.fixture(scope="session")

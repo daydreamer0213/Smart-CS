@@ -1,5 +1,9 @@
 # Phase 1.2 JWT 认证 — Implementation Plan
 
+> Historical implementation plan. JWT auth has been completed, and SmartCS has
+> since evolved into the enterprise employee Agent + controlled CRM workflow
+> positioning. Use `README.md` and `CONTINUE.md` for the current project state.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 添加 JWT 认证体系（用户注册/登录/刷新），替换 API Key 作为人类管理员认证方式，保留 API Key 给 M2M/脚本调用。
@@ -27,8 +31,8 @@
 ### Task 1: 依赖安装 + Config 扩展
 
 **Files:**
-- Modify: `D:\AAA\smart-cs\requirements.txt`
-- Modify: `D:\AAA\smart-cs\app\config.py`
+- Modify: `D:\2026.07.09\AAA\smart-cs\requirements.txt`
+- Modify: `D:\2026.07.09\AAA\smart-cs\app\config.py`
 
 **Interfaces:**
 - Produces: `settings.jwt_secret: str`, `settings.jwt_algorithm: str`, `settings.access_token_expire_minutes: int`, `settings.refresh_token_expire_days: int`
@@ -44,12 +48,12 @@ echo "email-validator>=2.0.0" >> requirements.txt
 - [ ] **Step 2: 安装新依赖**
 
 ```bash
-D:/conda/Scripts/conda.exe activate smart-cs && pip install python-jose[cryptography] passlib[bcrypt] email-validator --cache-dir E:/smartcs-cache/pip/
+D:/2026.07.09/conda/Scripts/conda.exe activate smart-cs && pip install python-jose[cryptography] passlib[bcrypt] email-validator --cache-dir D:/2026.07.09/smartcs-cache/pip/
 ```
 
 - [ ] **Step 3: 在 config.py 添加 JWT 配置字段**
 
-In `D:\AAA\smart-cs\app\config.py`, add after `agent_stream_enabled`:
+In `D:\2026.07.09\AAA\smart-cs\app\config.py`, add after `agent_stream_enabled`:
 
 ```python
     # JWT Auth
@@ -62,7 +66,7 @@ In `D:\AAA\smart-cs\app\config.py`, add after `agent_stream_enabled`:
 - [ ] **Step 4: 验证 config 加载**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -c "from app.config import settings; print(settings.jwt_algorithm); print(settings.access_token_expire_minutes)"
+D:/2026.07.09/conda-envs/smart-cs/python.exe -c "from app.config import settings; print(settings.jwt_algorithm); print(settings.access_token_expire_minutes)"
 ```
 
 Expected output:
@@ -74,7 +78,7 @@ HS256
 - [ ] **Step 5: 验证现有 94 个测试仍然通过**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -5
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -5
 ```
 
 Expected: `94 passed`
@@ -93,15 +97,15 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ### Task 2: User 模型
 
 **Files:**
-- Create: `D:\AAA\smart-cs\app\models\user.py`
-- Modify: `D:\AAA\smart-cs\app\models\__init__.py`
+- Create: `D:\2026.07.09\AAA\smart-cs\app\models\user.py`
+- Modify: `D:\2026.07.09\AAA\smart-cs\app\models\__init__.py`
 
 **Interfaces:**
 - Produces: `User` class with columns: `id`, `email`, `password_hash`, `display_name`, `role`, `is_active`, `tenant_id`, `created_at`, `updated_at`; relationship `tenant` → Tenant
 
 - [ ] **Step 1: 写模型级测试**
 
-Create `D:\AAA\smart-cs\tests\test_auth.py`:
+Create `D:\2026.07.09\AAA\smart-cs\tests\test_auth.py`:
 
 ```python
 """Tests for JWT auth — user model, security, token, and API endpoints."""
@@ -195,14 +199,14 @@ class TestUserModel:
 - [ ] **Step 2: 运行测试 — 预期失败（User 模型不存在）**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestUserModel -v --tb=short 2>&1 | tail -20
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestUserModel -v --tb=short 2>&1 | tail -20
 ```
 
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.models.user'`
 
 - [ ] **Step 3: 创建 User 模型**
 
-Create `D:\AAA\smart-cs\app\models\user.py`:
+Create `D:\2026.07.09\AAA\smart-cs\app\models\user.py`:
 
 ```python
 from sqlalchemy import Boolean, Column, ForeignKey, String
@@ -226,7 +230,7 @@ class User(Base, TimestampMixin):
 
 - [ ] **Step 4: 注册到 models/__init__.py**
 
-In `D:\AAA\smart-cs\app\models\__init__.py`, add after the `from app.models.knowledge import` line:
+In `D:\2026.07.09\AAA\smart-cs\app\models\__init__.py`, add after the `from app.models.knowledge import` line:
 
 ```python
 from app.models.user import User
@@ -237,7 +241,7 @@ And add `"User"` to `__all__` list.
 - [ ] **Step 5: 运行 User 模型测试**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestUserModel -v --tb=short
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestUserModel -v --tb=short
 ```
 
 Expected: 4 passed
@@ -245,7 +249,7 @@ Expected: 4 passed
 - [ ] **Step 6: 验证回归 — 现有测试仍全过**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -5
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -5
 ```
 
 Expected: `98 passed` (94 existing + 4 new)
@@ -264,14 +268,14 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ### Task 3: Auth Schemas
 
 **Files:**
-- Create: `D:\AAA\smart-cs\app\schemas\auth.py`
+- Create: `D:\2026.07.09\AAA\smart-cs\app\schemas\auth.py`
 
 **Interfaces:**
 - Produces: `RegisterRequest`, `LoginRequest`, `RefreshRequest`, `UserResponse`, `TokenResponse` Pydantic models
 
 - [ ] **Step 1: 写 schema 测试**
 
-Append to `D:\AAA\smart-cs\tests\test_auth.py`:
+Append to `D:\2026.07.09\AAA\smart-cs\tests\test_auth.py`:
 
 ```python
 import re
@@ -348,14 +352,14 @@ class TestAuthSchemas:
 - [ ] **Step 2: 运行测试 — 预期失败**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestAuthSchemas -v --tb=short 2>&1 | tail -20
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestAuthSchemas -v --tb=short 2>&1 | tail -20
 ```
 
 Expected: FAIL — cannot import `app.schemas.auth`
 
 - [ ] **Step 3: 创建 auth schemas**
 
-Create `D:\AAA\smart-cs\app\schemas\auth.py`:
+Create `D:\2026.07.09\AAA\smart-cs\app\schemas\auth.py`:
 
 ```python
 """Auth schemas — register, login, refresh, token response."""
@@ -425,7 +429,7 @@ class TokenResponse(BaseModel):
 - [ ] **Step 4: 运行 schema 测试**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestAuthSchemas -v --tb=short
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestAuthSchemas -v --tb=short
 ```
 
 Expected: 7 passed
@@ -433,7 +437,7 @@ Expected: 7 passed
 - [ ] **Step 5: 验证回归**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -5
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -5
 ```
 
 - [ ] **Step 6: Commit**
@@ -450,15 +454,15 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ### Task 4: 密码哈希（security.py）
 
 **Files:**
-- Create: `D:\AAA\smart-cs\app\core\auth\__init__.py`
-- Create: `D:\AAA\smart-cs\app\core\auth\security.py`
+- Create: `D:\2026.07.09\AAA\smart-cs\app\core\auth\__init__.py`
+- Create: `D:\2026.07.09\AAA\smart-cs\app\core\auth\security.py`
 
 **Interfaces:**
 - Produces: `hash_password(password: str) -> str`, `verify_password(plain_password: str, hashed: str) -> bool`
 
 - [ ] **Step 1: 写 security 测试**
 
-Append to `D:\AAA\smart-cs\tests\test_auth.py`:
+Append to `D:\2026.07.09\AAA\smart-cs\tests\test_auth.py`:
 
 ```python
 class TestPasswordHashing:
@@ -489,16 +493,16 @@ class TestPasswordHashing:
 - [ ] **Step 2: 运行测试 — 预期失败**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestPasswordHashing -v --tb=short 2>&1 | tail -20
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestPasswordHashing -v --tb=short 2>&1 | tail -20
 ```
 
 Expected: FAIL — `ModuleNotFoundError`
 
 - [ ] **Step 3: 创建 security.py**
 
-Create `D:\AAA\smart-cs\app\core\auth\__init__.py` (empty file).
+Create `D:\2026.07.09\AAA\smart-cs\app\core\auth\__init__.py` (empty file).
 
-Create `D:\AAA\smart-cs\app\core\auth\security.py`:
+Create `D:\2026.07.09\AAA\smart-cs\app\core\auth\security.py`:
 
 ```python
 """Password hashing with bcrypt via passlib."""
@@ -519,7 +523,7 @@ def verify_password(plain_password: str, hashed: str) -> bool:
 - [ ] **Step 4: 运行 security 测试**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestPasswordHashing -v --tb=short
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestPasswordHashing -v --tb=short
 ```
 
 Expected: 3 passed
@@ -538,14 +542,14 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ### Task 5: JWT Token（token.py）
 
 **Files:**
-- Create: `D:\AAA\smart-cs\app\core\auth\token.py`
+- Create: `D:\2026.07.09\AAA\smart-cs\app\core\auth\token.py`
 
 **Interfaces:**
 - Produces: `create_access_token(user_id, tenant_id, role) -> str`, `create_refresh_token(user_id, tenant_id, role) -> str`, `decode_token(token, expected_type) -> dict`
 
 - [ ] **Step 1: 设置 JWT_SECRET 用于测试**
 
-In `D:\AAA\smart-cs\tests\conftest.py`, after the `settings.llm_api_key` patch, add:
+In `D:\2026.07.09\AAA\smart-cs\tests\conftest.py`, after the `settings.llm_api_key` patch, add:
 
 ```python
 # Set a test JWT secret so token functions work without .env
@@ -555,7 +559,7 @@ if not settings.jwt_secret:
 
 - [ ] **Step 2: 写 token 测试**
 
-Append to `D:\AAA\smart-cs\tests\test_auth.py`:
+Append to `D:\2026.07.09\AAA\smart-cs\tests\test_auth.py`:
 
 ```python
 from jose import JWTError
@@ -624,14 +628,14 @@ class TestJwtToken:
 - [ ] **Step 3: 运行测试 — 预期失败**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestJwtToken -v --tb=short 2>&1 | tail -20
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestJwtToken -v --tb=short 2>&1 | tail -20
 ```
 
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.core.auth.token'`
 
 - [ ] **Step 4: 创建 token.py**
 
-Create `D:\AAA\smart-cs\app\core\auth\token.py`:
+Create `D:\2026.07.09\AAA\smart-cs\app\core\auth\token.py`:
 
 ```python
 """JWT token creation and verification using python-jose."""
@@ -690,7 +694,7 @@ def decode_token(token: str, expected_type: str = "access") -> dict:
 - [ ] **Step 5: 运行 token 测试**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestJwtToken -v --tb=short
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestJwtToken -v --tb=short
 ```
 
 Expected: 6 passed
@@ -698,7 +702,7 @@ Expected: 6 passed
 - [ ] **Step 6: 验证回归**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -5
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -5
 ```
 
 - [ ] **Step 7: Commit**
@@ -715,7 +719,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ### Task 6: Auth API 端点
 
 **Files:**
-- Create: `D:\AAA\smart-cs\app\api\auth.py`
+- Create: `D:\2026.07.09\AAA\smart-cs\app\api\auth.py`
 
 **Interfaces:**
 - Produces: `POST /api/v1/auth/register`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`
@@ -723,7 +727,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 - [ ] **Step 1: 写 API 集成测试**
 
-Append to `D:\AAA\smart-cs\tests\test_auth.py`:
+Append to `D:\2026.07.09\AAA\smart-cs\tests\test_auth.py`:
 
 ```python
 class TestAuthAPI:
@@ -882,14 +886,14 @@ class TestAuthAPI:
 - [ ] **Step 2: 运行测试 — 预期失败**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestAuthAPI -v --tb=short 2>&1 | tail -20
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestAuthAPI -v --tb=short 2>&1 | tail -20
 ```
 
 Expected: FAIL — 404 for the endpoints
 
 - [ ] **Step 3: 创建 auth API router**
 
-Create `D:\AAA\smart-cs\app\api\auth.py`:
+Create `D:\2026.07.09\AAA\smart-cs\app\api\auth.py`:
 
 ```python
 """Auth endpoints — register, login, refresh."""
@@ -1001,14 +1005,14 @@ def refresh(body: RefreshRequest, request: Request, db: Session = Depends(get_db
 
 - [ ] **Step 4: 注册 auth router 到 main.py**
 
-In `D:\AAA\smart-cs\app\main.py`:
+In `D:\2026.07.09\AAA\smart-cs\app\main.py`:
 - Add import: `from app.api.auth import router as auth_router` (after other router imports)
 - Add: `app.include_router(auth_router)` (after other include_router calls)
 
 - [ ] **Step 5: 运行 API 测试**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestAuthAPI -v --tb=short
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestAuthAPI -v --tb=short
 ```
 
 Expected: 10 passed
@@ -1016,7 +1020,7 @@ Expected: 10 passed
 - [ ] **Step 6: 验证回归**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -5
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -5
 ```
 
 - [ ] **Step 7: Commit**
@@ -1033,7 +1037,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ### Task 7: Auth 依赖（get_current_user）
 
 **Files:**
-- Modify: `D:\AAA\smart-cs\app\api\deps.py`
+- Modify: `D:\2026.07.09\AAA\smart-cs\app\api\deps.py`
 
 **Interfaces:**
 - Produces: `get_current_user(request: Request, db: Session) -> User`
@@ -1041,7 +1045,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 - [ ] **Step 1: 写依赖测试**
 
-Append to `D:\AAA\smart-cs\tests\test_auth.py`:
+Append to `D:\2026.07.09\AAA\smart-cs\tests\test_auth.py`:
 
 ```python
 class TestGetCurrentUser:
@@ -1099,7 +1103,7 @@ class TestGetCurrentUser:
 
 - [ ] **Step 2: 添加 /me 测试端点 + get_current_user**
 
-In `D:\AAA\smart-cs\app\api\auth.py`, add after the existing imports:
+In `D:\2026.07.09\AAA\smart-cs\app\api\auth.py`, add after the existing imports:
 
 ```python
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -1126,7 +1130,7 @@ def me(
     }
 ```
 
-In `D:\AAA\smart-cs\app\api\deps.py`, add:
+In `D:\2026.07.09\AAA\smart-cs\app\api\deps.py`, add:
 
 ```python
 from fastapi import Request
@@ -1176,7 +1180,7 @@ from app.models.user import User
 - [ ] **Step 3: 运行依赖测试**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestGetCurrentUser -v --tb=short
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestGetCurrentUser -v --tb=short
 ```
 
 Expected: 5 passed
@@ -1184,7 +1188,7 @@ Expected: 5 passed
 - [ ] **Step 4: 验证回归**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -5
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -5
 ```
 
 - [ ] **Step 5: Commit**
@@ -1201,7 +1205,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ### Task 8: Admin 角色检查（require_admin / require_owner）
 
 **Files:**
-- Modify: `D:\AAA\smart-cs\app\api\admin\auth.py`
+- Modify: `D:\2026.07.09\AAA\smart-cs\app\api\admin\auth.py`
 
 **Interfaces:**
 - Produces: `require_admin(db, request) -> User`, `require_owner(db, request) -> User`
@@ -1209,7 +1213,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 - [ ] **Step 1: 写角色检查测试**
 
-Append to `D:\AAA\smart-cs\tests\test_auth.py`:
+Append to `D:\2026.07.09\AAA\smart-cs\tests\test_auth.py`:
 
 ```python
 class TestAdminRoleCheck:
@@ -1230,7 +1234,7 @@ Let me simplify this test class to test via the admin routes directly, or create
 
 Actually, let me add a small test endpoint to auth.py that uses require_admin/require_owner, like `/me/admin` and `/me/owner`.
 
-Append to `D:\AAA\smart-cs\tests\test_auth.py`:
+Append to `D:\2026.07.09\AAA\smart-cs\tests\test_auth.py`:
 
 ```python
 class TestAdminRoleCheck:
@@ -1313,7 +1317,7 @@ class TestAdminRoleCheck:
 
 - [ ] **Step 2: 添加 require_admin/require_owner + 测试端点**
 
-In `D:\AAA\smart-cs\app\api\admin\auth.py`, add after the existing `verify_admin` function:
+In `D:\2026.07.09\AAA\smart-cs\app\api\admin\auth.py`, add after the existing `verify_admin` function:
 
 ```python
 from app.api.deps import get_current_user, get_db
@@ -1332,7 +1336,7 @@ def require_owner(user: User = Depends(get_current_user)) -> User:
     return user
 ```
 
-In `D:\AAA\smart-cs\app\api\auth.py`, add test endpoints for role checks:
+In `D:\2026.07.09\AAA\smart-cs\app\api\auth.py`, add test endpoints for role checks:
 
 ```python
 from app.api.admin.auth import require_admin, require_owner
@@ -1351,7 +1355,7 @@ def me_owner(user: User = Depends(require_owner)):
 - [ ] **Step 3: 运行角色检查测试**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestAdminRoleCheck -v --tb=short
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestAdminRoleCheck -v --tb=short
 ```
 
 Expected: 6 passed
@@ -1359,7 +1363,7 @@ Expected: 6 passed
 - [ ] **Step 4: 验证回归**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -5
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -5
 ```
 
 - [ ] **Step 5: Commit**
@@ -1376,16 +1380,16 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ### Task 9: Admin 路由迁移 — 支持 JWT + API Key 双认证
 
 **Files:**
-- Modify: `D:\AAA\smart-cs\app\api\admin\knowledge.py`
-- Modify: `D:\AAA\smart-cs\app\api\admin\document.py`
-- Modify: `D:\AAA\smart-cs\app\api\admin\analytics.py`
+- Modify: `D:\2026.07.09\AAA\smart-cs\app\api\admin\knowledge.py`
+- Modify: `D:\2026.07.09\AAA\smart-cs\app\api\admin\document.py`
+- Modify: `D:\2026.07.09\AAA\smart-cs\app\api\admin\analytics.py`
 
 **Interfaces:**
 - Consumes: `require_admin`, `verify_admin`
 
 - [ ] **Step 1: 写 admin 路由集成测试**
 
-Append to `D:\AAA\smart-cs\tests\test_auth.py`:
+Append to `D:\2026.07.09\AAA\smart-cs\tests\test_auth.py`:
 
 ```python
 class TestAdminRouteJWT:
@@ -1454,7 +1458,7 @@ from app.api.admin.auth import require_admin, verify_admin
 
 For every route that uses `_admin: AdminApiKey = Depends(verify_admin)`, replace with a dual-auth pattern. Since FastAPI doesn't natively support union dependencies, we use a helper:
 
-In `D:\AAA\smart-cs\app\api\admin\auth.py`, add:
+In `D:\2026.07.09\AAA\smart-cs\app\api\admin\auth.py`, add:
 
 ```python
 def require_auth(
@@ -1616,7 +1620,7 @@ This is the simplest possible migration. Let me write the plan with this approac
 
 - [ ] **Step 2: Implement combined admin_auth dependency**
 
-In `D:\AAA\smart-cs\app\api\admin\auth.py`, add:
+In `D:\2026.07.09\AAA\smart-cs\app\api\admin\auth.py`, add:
 
 ```python
 from app.api.deps import get_current_user, get_db
@@ -1672,17 +1676,17 @@ Also remove unused `AdminApiKey` import from the admin route files (since they n
 
 Run search-and-replace:
 
-In `D:\AAA\smart-cs\app\api\admin\knowledge.py`:
+In `D:\2026.07.09\AAA\smart-cs\app\api\admin\knowledge.py`:
 - Line 10: `from app.api.admin.auth import verify_admin` → `from app.api.admin.auth import admin_auth`
 - Line 14: Remove `AdminApiKey, ` from import (leaving `from app.models.tenant import Tenant`)
 - All 8 instances of `_admin: AdminApiKey = Depends(verify_admin),` → `_auth = Depends(admin_auth),`
 
-In `D:\AAA\smart-cs\app\api\admin\document.py`:
+In `D:\2026.07.09\AAA\smart-cs\app\api\admin\document.py`:
 - Line 10: `from app.api.admin.auth import verify_admin` → `from app.api.admin.auth import admin_auth`
 - Line 12: Remove `AdminApiKey, ` from import
 - All 4 instances of `_admin: AdminApiKey = Depends(verify_admin),` → `_auth = Depends(admin_auth),`
 
-In `D:\AAA\smart-cs\app\api\admin\analytics.py`:
+In `D:\2026.07.09\AAA\smart-cs\app\api\admin\analytics.py`:
 - Line 13: `from app.api.admin.auth import verify_admin` → `from app.api.admin.auth import admin_auth`
 - Line 15: Remove `AdminApiKey, ` from import
 - All 4 instances of `_admin: AdminApiKey = Depends(verify_admin),` → `_auth = Depends(admin_auth),`
@@ -1690,7 +1694,7 @@ In `D:\AAA\smart-cs\app\api\admin\analytics.py`:
 - [ ] **Step 4: 运行 admin 路由 JWT 测试**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestAdminRouteJWT -v --tb=short
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/test_auth.py::TestAdminRouteJWT -v --tb=short
 ```
 
 Expected: 3 passed
@@ -1698,7 +1702,7 @@ Expected: 3 passed
 - [ ] **Step 5: 验证回归 — 包括所有现有 API Key 测试**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -5
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -5
 ```
 
 - [ ] **Step 6: Commit**
@@ -1721,7 +1725,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 - [ ] **Step 1: 运行完整测试套件**
 
 ```bash
-D:/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -30
+D:/2026.07.09/conda-envs/smart-cs/python.exe -m pytest tests/ -v --tb=short 2>&1 | tail -30
 ```
 
 Expected: all tests pass (94 existing + all new auth tests)
@@ -1729,7 +1733,7 @@ Expected: all tests pass (94 existing + all new auth tests)
 - [ ] **Step 2: 验证应用启动**
 
 ```bash
-timeout 5 D:/conda-envs/smart-cs/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 2>&1 || true
+timeout 5 D:/2026.07.09/conda-envs/smart-cs/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 2>&1 || true
 ```
 
 Expected: No import errors, app starts successfully.

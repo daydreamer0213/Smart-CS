@@ -28,9 +28,9 @@ _runtime: ContextVar[dict] = ContextVar("agent_runtime", default={})
 _handoff_flag: ContextVar[bool] = ContextVar("agent_handoff", default=False)
 
 
-def set_runtime(tenant_slug: str, db_session: Session) -> None:
+def set_runtime(tenant_slug: str, db_session: Session, role: str | None = None) -> None:
     """Set per-request runtime context. Call before graph.ainvoke / astream_events."""
-    _runtime.set({"tenant_slug": tenant_slug, "db_session": db_session})
+    _runtime.set({"tenant_slug": tenant_slug, "db_session": db_session, "role": role})
     _handoff_flag.set(False)
 
 
@@ -81,12 +81,16 @@ async def search_knowledge(query: str) -> str:
         )
         item_map = {item.id: item for item in items}
 
+        role = ctx.get("role")
         results = []
         for r in fused:
             item = item_map.get(r["doc_id"])
+            if item is None or (item.audience_roles and role not in item.audience_roles):
+                continue
             results.append({
-                "question": item.question if item else "",
-                "answer": item.answer if item else "",
+                "id": item.id,
+                "question": item.question,
+                "answer": item.answer,
                 "score": round(r["score"], 4),
             })
 

@@ -1,6 +1,6 @@
 """Knowledge base models — FAQ items and categories."""
 
-from sqlalchemy import Column, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base, TimestampMixin
@@ -27,6 +27,7 @@ class KnowledgeItem(Base, TimestampMixin):
     keywords = Column(Text, default="")
     embedding_id = Column(String(200), nullable=True)
     status = Column(String(20), default="active", nullable=False)
+    audience_roles = Column(JSON, default=list, nullable=False)
 
     tenant = relationship("Tenant")
     category = relationship("Category")

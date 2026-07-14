@@ -29,4 +29,10 @@ class Settings(BaseSettings):
     agent_timeout_seconds: int = 60
     agent_stream_enabled: bool = True
 
+    # Auth
+    jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 7
+
 settings = Settings()

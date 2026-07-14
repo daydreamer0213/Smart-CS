@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SmartCS 企业员工助手</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f7fb;color:#172033;font:14px system-ui,"Microsoft YaHei",sans-serif}.shell{max-width:820px;min-height:100vh;margin:auto;padding:22px}.card{background:#fff;border:1px solid #dce3ee;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px #0000000d}h1{font-size:22px;margin:0 0 6px}h2{font-size:15px;margin:0 0 8px}.muted{color:#667085}input,button{font:inherit;border-radius:8px;padding:9px}input{width:100%;border:1px solid #cbd5e1;margin:4px 0 8px}button{border:0;background:#175cd3;color:#fff;cursor:pointer}button.secondary{background:#e8edf5;color:#172033}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.hidden{display:none}.message{padding:10px 12px;margin:8px 0;border-radius:10px;white-space:pre-wrap}.user{background:#eaf2ff;margin-left:52px}.assistant{background:#f2f4f7;margin-right:52px}.error{color:#b42318}.skills{font-size:12px;color:#475467}.confirm{border-left:4px solid #f79009;background:#fffaeb}.send{display:flex;gap:8px}.send input{margin:0}.send button{white-space:nowrap}
+</style>
+<main class="shell">
+  <h1>SmartCS 企业员工助手</h1>
+  <p class="muted">一个聊天入口：查企业制度，或在授权范围内查询并辅助填写 CRM。</p>
+
+  <section class="card" id="loginCard">
+    <h2>登录</h2>
+    <div class="grid"><label>租户<input id="tenant" value="demo"></label><label>邮箱<input id="email" type="email"></label><label>密码<input id="password" type="password"></label></div>
+    <button id="loginButton">登录</button> <span id="loginStatus" class="muted"></span>
+  </section>
+
+  <section class="card hidden" id="chatCard">
+    <div id="skills" class="skills"></div>
+    <div id="messages"></div>
+    <div id="pending" class="message confirm hidden"><b>待确认操作：</b><span id="summary"></span><br><br><button id="confirmButton">确认执行</button> <button id="cancelButton" class="secondary">取消</button></div>
+    <div class="send"><input id="message" placeholder="例如：年假如何计算？ / 查询华东智造客户全貌 / 帮我创建一条线索" disabled><button id="sendButton" disabled>发送</button></div>
+  </section>
+</main>
+<script>
+let token='',tenant='',draft=null,sessionId=crypto.randomUUID();
+const $=id=>document.getElementById(id);
+function addMessage(kind,text){const node=document.createElement('div');node.className=`message ${kind}`;node.textContent=text;$('messages').append(node);node.scrollIntoView({block:'end'})}
+async function request(path,options={}){const response=await fetch(path,{...options,headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`,...options.headers}});const data=await response.json();if(!response.ok)throw new Error(data.error?.message?.message||data.error?.message||'请求失败');return data}
+async function login(){tenant=$('tenant').value.trim();try{const data=await request('/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tenant_slug:tenant,email:$('email').value,password:$('password').value})});token=data.access_token;$('loginStatus').textContent=`已登录：${data.user.display_name}（${data.user.role}）`;$('chatCard').classList.remove('hidden');$('message').disabled=false;$('sendButton').disabled=false;$('skills').textContent='当前可用 Skill：'+(data.user.role==='employee'?'企业知识检索':'企业知识检索、CRM 查询、CRM 草稿操作');addMessage('assistant','你好，请直接告诉我需要查询或处理什么。')}catch(error){$('loginStatus').className='error';$('loginStatus').textContent=error.message}}
+async function send(){const message=$('message').value.trim();if(!message)return;addMessage('user',message);$('message').value='';try{const data=await request(`/api/v1/${tenant}/assistant/chat`,{method:'POST',body:JSON.stringify({session_id:sessionId,message})});sessionId=data.session_id;addMessage('assistant',data.reply);$('skills').textContent='当前可用 Skill：'+data.enabled_skills.join('、');if(data.pending_action){draft=data.pending_action;$('summary').textContent=draft.summary;$('pending').classList.remove('hidden')}}catch(error){addMessage('assistant','请求失败：'+error.message)}}
+async function confirm(){if(!draft)return;try{const data=await request(`/api/v1/${tenant}/assistant/action-drafts/${draft.id}/confirm`,{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()}});addMessage('assistant',`操作已完成，审计编号：${data.audit_id}`);cancel()}catch(error){addMessage('assistant','确认失败：'+error.message)}}
+function cancel(){draft=null;$('pending').classList.add('hidden')}
+$('loginButton').onclick=login;$('sendButton').onclick=send;$('confirmButton').onclick=confirm;$('cancelButton').onclick=cancel;$('message').addEventListener('keydown',e=>{if(e.key==='Enter')send()});
+</script>
+</html>

@@ -1,4 +1,5 @@
 .env
+.env.fastgpt-poc
 __pycache__/
 *.pyc
 *.pyo

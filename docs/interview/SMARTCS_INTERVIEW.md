@@ -11,8 +11,8 @@ SmartCS is an enterprise AI application engineering sample:
 - audit logs and idempotent confirmation.
 - admin governance APIs.
 - JWT and API key authentication.
-- tests for auth, tenant isolation, RAG, agent behavior, CRM safety, streaming,
-  and security cases.
+- tests for auth, tenant isolation, FAQ/document RAG, primary-route rate
+  limiting, agent behavior, CRM safety, and security cases.
 
 The point is not "I made a chatbot." The point is "I can build the backend
 engineering around an enterprise Agent workflow."
@@ -57,9 +57,9 @@ filter.
 - Added a local CRM sales-assistant MVP with customer overview, lead/task action
   drafts, explicit confirmation, duplicate-lead protection, idempotent
   confirmation, and audit logs.
-- Covered key backend behavior with pytest cases for RAG retrieval, Agent
-  tools, role-scoped Skills, controlled CRM writes, SSE streaming, security,
-  tenant isolation, and JWT boundaries.
+- Covered key backend behavior with pytest cases for FAQ/document retrieval,
+  BM25 incremental indexing, Agent tools, role-scoped Skills, controlled CRM
+  writes, primary-route rate limiting, security, tenant isolation, and JWT boundaries.
 
 ## 30-Second Pitch
 

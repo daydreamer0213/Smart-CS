@@ -61,8 +61,8 @@ Completed:
 - role-scoped knowledge and CRM Skills implemented.
 - local CRM sales-assistant MVP added.
 - CRM writes are confirmation-gated, idempotent, and audited.
-- older `/chat` and `/business` routes are retained for compatibility and
-  regression tests, but `/assistant` is the demo entry.
+- the unauthenticated `/chat` route is not mounted; `/assistant` is the only
+  employee-facing Agent entry, while `/business` remains JWT-protected transition coverage.
 - offline hash embedding demo flow verified.
 - README, interview notes, final pitch, and demo script added.
 

@@ -54,13 +54,14 @@ D:\2026.07.09\smartcs-cache\torch
 
 - 新电脑环境恢复，依赖和缓存路径整理到 D 盘。
 - JWT 登录、多租户身份边界、owner/admin/agent/employee 角色。
-- 企业知识库 RAG：文档导入、分块、ChromaDB、BM25、后台治理。
+- 企业知识库 RAG：FAQ 与文档分块统一检索，文档导入、分块、ChromaDB、BM25、后台治理。
 - 统一员工 Agent 入口：`/api/v1/{tenant_slug}/assistant/*`。
 - 角色化 Skills：
   - `employee`：企业知识检索。
   - `agent/admin/owner`：企业知识检索 + CRM 查询 + 业务操作草稿。
 - 本地 CRM MVP：客户概览、线索/任务操作草稿、显式确认、幂等确认、审计日志、重复线索保护。
-- 旧 `/chat` 和 `/business` 路由保留为兼容和回归测试用途，主展示入口是 `/assistant`。
+- 未认证旧 `/chat` 路由已下线；`/assistant` 是唯一员工 Agent 入口，`/business` 仅保留 JWT 保护的受控写入过渡接口。
+- 阶段 2C 已完成：修复主入口限流覆盖、BM25 增量语料丢失和文档分块无法被 Agent 检索的问题，并补齐对应回归测试。
 - 离线 `hash` embedding provider，用于无外部额度时稳定演示。
 - README、求职交付包、最终面试表达稿和 3 分钟演示稿。
 

@@ -16,6 +16,18 @@ def test_bm25_build_and_search():
     assert results[0][0] == "1"
 
 
+def test_bm25_incremental_add_keeps_existing_documents():
+    from app.core.retrieval.bm25_index import BM25IndexManager
+
+    bm = BM25IndexManager()
+    bm.add("test", "travel", "travel expense reimbursement policy")
+    bm.add("test", "contract", "supplier contract approval process")
+    bm.add("test", "access", "system access request process")
+
+    results = bm.search("test", "travel reimbursement")
+    assert results[0][0] == "travel"
+
+
 def test_rrf_fusion():
     from app.core.retrieval.fusion import rrf_fusion
 

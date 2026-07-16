@@ -19,7 +19,6 @@ from app.api.admin.knowledge import router as admin_knowledge_router
 from app.api.auth import router as auth_router
 from app.api.assistant import router as assistant_router
 from app.api.business import router as business_router
-from app.api.chat import router as chat_router
 from app.api.health import router as health_router
 from app.config import settings
 from app.middleware.error_handler import register_error_handlers
@@ -108,6 +107,7 @@ async def lifespan(_app: FastAPI):
     from app.core.embedding import get_embedding_provider as get_emb_provider
     from app.core.cache.exact import ExactCache
     from app.core.cache.semantic import SemanticCache
+    from app.models.document import Document, DocumentChunk
     from app.models.knowledge import KnowledgeItem
 
     vector_store = VectorStore(settings.chroma_persist_dir)
@@ -127,7 +127,7 @@ async def lifespan(_app: FastAPI):
     try:
         tenants = db.query(Tenant).filter(Tenant.is_active.is_(True)).all()
         for tenant in tenants:
-            items = (
+            knowledge_items = (
                 db.query(KnowledgeItem)
                 .filter(
                     KnowledgeItem.tenant_id == tenant.id,
@@ -135,11 +135,22 @@ async def lifespan(_app: FastAPI):
                 )
                 .all()
             )
-            if items:
-                corpus = [
-                    (item.embedding_id or str(item.id), f"{item.question} {item.answer}")
-                    for item in items
-                ]
+            document_chunks = (
+                db.query(DocumentChunk)
+                .join(Document, DocumentChunk.document_id == Document.id)
+                .filter(
+                    Document.tenant_id == tenant.id,
+                    Document.status == "ready",
+                    DocumentChunk.status == "active",
+                )
+                .all()
+            )
+            corpus = [
+                (item.embedding_id or str(item.id), f"{item.question} {item.answer}")
+                for item in knowledge_items
+            ]
+            corpus.extend((chunk.embedding_id or str(chunk.id), chunk.content) for chunk in document_chunks)
+            if corpus:
                 bm25_manager.build(tenant.slug, corpus)
     finally:
         db.close()
@@ -160,9 +171,10 @@ def create_app() -> FastAPI:
 
     # 2. Add middlewares.
     #    Starlette applies middlewares in reverse addition order (last added = outermost).
-    #    Order (request path): Logging -> RateLimit -> Tenant -> route handler
-    app.add_middleware(TenantMiddleware)     # Added first  -> innermost
+    #    Order (request path): Logging -> Tenant -> RateLimit -> route handler.
+    #    Tenant must run before RateLimit because the limiter keys on the resolved tenant.
     app.add_middleware(RateLimitMiddleware, rpm=settings.rate_limit_per_minute)
+    app.add_middleware(TenantMiddleware)
     app.add_middleware(LoggingMiddleware)    # Added last   -> outermost (wraps everything)
 
     # 3. Prometheus metrics — auto-instruments HTTP requests
@@ -177,7 +189,6 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(assistant_router)
     app.include_router(business_router)
-    app.include_router(chat_router)
     app.include_router(admin_auth_router)
     app.include_router(admin_document_router)
     app.include_router(admin_knowledge_router)

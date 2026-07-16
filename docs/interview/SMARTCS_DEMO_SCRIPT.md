@@ -93,4 +93,4 @@ cross-tenant admin access: 403
 - 离线 hash embedding 只是为了稳定演示，不代表生产 embedding 质量。
 - 本地 CRM 是 fictional demo data，不是完整 CRM 产品。
 - 如果 `.env` 没有真实 LLM key，assistant 路由会返回可读的 503；角色和安全边界由测试覆盖。
-- 主展示入口是 `/assistant`，旧 `/chat` 和 `/business` 只保留兼容和回归测试。
+- 主展示入口是 `/assistant`；旧 `/chat` 已下线，`/business` 仅保留 JWT 保护的受控写入过渡接口。

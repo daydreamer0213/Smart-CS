@@ -30,7 +30,7 @@ async def test_agent_direct_reply_no_tools(mock_llm, db, test_tenant):
     """Agent responds directly without tool calls for simple queries."""
     mock_llm.ainvoke.return_value = AIMessage(content="您好！有什么可以帮助您的？")
 
-    set_runtime(test_tenant.slug, db)
+    set_runtime(test_tenant.slug, db, tenant_id=test_tenant.id)
     graph = build_agent_graph()
     state = await graph.ainvoke(
         {
@@ -68,7 +68,7 @@ async def test_agent_calls_search_knowledge_tool(mock_llm, db, test_tenant):
         AIMessage(content="根据我们的退货政策，您可以在7天内无理由退货。"),
     ]
 
-    set_runtime(test_tenant.slug, db)
+    set_runtime(test_tenant.slug, db, tenant_id=test_tenant.id)
     graph = build_agent_graph()
     state = await graph.ainvoke(
         {
@@ -102,7 +102,7 @@ async def test_agent_calls_handoff_tool(mock_llm, db, test_tenant):
         AIMessage(content="已为您转接人工客服。"),
     ]
 
-    set_runtime(test_tenant.slug, db)
+    set_runtime(test_tenant.slug, db, tenant_id=test_tenant.id)
     graph = build_agent_graph()
     state = await graph.ainvoke(
         {
@@ -133,7 +133,7 @@ async def test_tool_loop_error_then_retry(mock_llm, db, test_tenant):
         AIMessage(content="抱歉，暂时无法回答您关于火星旅行的问题，是否需要转人工？"),
     ]
 
-    set_runtime(test_tenant.slug, db)
+    set_runtime(test_tenant.slug, db, tenant_id=test_tenant.id)
     graph = build_agent_graph()
     state = await graph.ainvoke(
         {

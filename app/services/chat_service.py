@@ -165,7 +165,7 @@ def _agent_setup(tenant: Tenant, db: Session) -> tuple[str, dict]:
         tenant.name,
         tenant_config.get("system_prompt_append", ""),
     )
-    set_runtime(tenant.slug, db)
+    set_runtime(tenant.slug, db, tenant_id=tenant.id)
     return system_prompt, {
         "configurable": {"thread_id": ""},
         "recursion_limit": settings.agent_recursion_limit,

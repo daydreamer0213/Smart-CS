@@ -106,7 +106,7 @@ async def test_legacy_knowledge_search_only_returns_public_items(db, test_tenant
     monkeypatch.setattr("app.core.agent.tools.get_embedding_provider", lambda: FakeEmbedding())
     monkeypatch.setattr("app.core.agent.tools.get_vector_store", lambda: FakeStore())
     monkeypatch.setattr("app.core.agent.tools.get_bm25_manager", lambda: FakeBm25())
-    set_knowledge_runtime(test_tenant.slug, db)
+    set_knowledge_runtime(test_tenant.slug, db, tenant_id=test_tenant.id)
     result = json.loads(await search_knowledge.ainvoke({"query": "制度"}))
     assert [item["id"] for item in result["results"]] == [public.id]
 

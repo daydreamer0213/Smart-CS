@@ -28,9 +28,19 @@ _runtime: ContextVar[dict] = ContextVar("agent_runtime", default={})
 _handoff_flag: ContextVar[bool] = ContextVar("agent_handoff", default=False)
 
 
-def set_runtime(tenant_slug: str, db_session: Session, role: str | None = None) -> None:
+def set_runtime(
+    tenant_slug: str,
+    db_session: Session,
+    role: str | None = None,
+    tenant_id: str | None = None,
+) -> None:
     """Set per-request runtime context. Call before graph.ainvoke / astream_events."""
-    _runtime.set({"tenant_slug": tenant_slug, "db_session": db_session, "role": role})
+    _runtime.set({
+        "tenant_slug": tenant_slug,
+        "tenant_id": tenant_id,
+        "db_session": db_session,
+        "role": role,
+    })
     _handoff_flag.set(False)
 
 
@@ -48,6 +58,7 @@ async def search_knowledge(query: str) -> str:
     """
     ctx = _runtime.get()
     tenant_slug = ctx["tenant_slug"]
+    tenant_id = ctx.get("tenant_id")
     db_session = ctx["db_session"]
 
     try:
@@ -69,29 +80,70 @@ async def search_knowledge(query: str) -> str:
         if not fused:
             return json.dumps({"results": [], "message": "未找到相关知识条目"}, ensure_ascii=False)
 
+        from app.models.document import Document, DocumentChunk
         from app.models.knowledge import KnowledgeItem
 
+        if not tenant_id:
+            return json.dumps({"results": [], "message": "Missing tenant context"}, ensure_ascii=False)
+
         doc_ids = [r["doc_id"] for r in fused]
-        items = (
+        knowledge_items = (
             db_session.query(KnowledgeItem)
-            .filter(KnowledgeItem.id.in_(doc_ids))
+            .filter(
+                KnowledgeItem.tenant_id == tenant_id,
+                KnowledgeItem.status == "active",
+                KnowledgeItem.id.in_(doc_ids),
+            )
             .all()
             if doc_ids
             else []
         )
-        item_map = {item.id: item for item in items}
+        document_chunks = (
+            db_session.query(DocumentChunk, Document)
+            .join(Document, DocumentChunk.document_id == Document.id)
+            .filter(
+                Document.tenant_id == tenant_id,
+                Document.status == "ready",
+                DocumentChunk.status == "active",
+                DocumentChunk.id.in_(doc_ids),
+            )
+            .all()
+            if doc_ids
+            else []
+        )
+        item_map = {item.id: item for item in knowledge_items}
+        chunk_map = {chunk.id: (chunk, document) for chunk, document in document_chunks}
 
         role = ctx.get("role")
         results = []
         for r in fused:
             item = item_map.get(r["doc_id"])
-            if item is None or (item.audience_roles and role not in item.audience_roles):
+            if item is not None:
+                if item.audience_roles and role not in item.audience_roles:
+                    continue
+                results.append({
+                    "id": item.id,
+                    "source_type": "knowledge",
+                    "title": item.question,
+                    "question": item.question,
+                    "answer": item.answer,
+                    "score": round(r["score"], 4),
+                    "retrievers": r["sources"],
+                })
                 continue
+            chunk_entry = chunk_map.get(r["doc_id"])
+            if chunk_entry is None:
+                continue
+            chunk, document = chunk_entry
             results.append({
-                "id": item.id,
-                "question": item.question,
-                "answer": item.answer,
+                "id": chunk.id,
+                "source_type": "document",
+                "document_id": document.id,
+                "title": document.filename,
+                "chunk_index": chunk.chunk_index,
+                "content": chunk.content,
                 "score": round(r["score"], 4),
+                "retrievers": r["sources"],
             })
 
         return json.dumps({"results": results}, ensure_ascii=False)

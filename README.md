@@ -17,19 +17,20 @@ workflow around company knowledge:
 
 - Multi-tenant boundary: each company or business unit has isolated knowledge,
   documents, admin access, and API keys.
-- Governed RAG: knowledge can be imported, chunked, searched, listed, updated,
-  archived, and traced through admin APIs.
+- Governed RAG: FAQ entries and imported document chunks are retrieved through
+  the same tenant-scoped vector + BM25 path.
 - One authenticated enterprise assistant: it dynamically exposes corporate
   knowledge and CRM Skills based on the current user role.
 - It keeps the latest ten turns per authenticated employee session; knowledge
   entries may optionally be restricted to specific roles (empty means all staff).
 - Controlled CRM workflow: the assistant may prepare a lead/task change, but
   only an explicit user confirmation performs the write.
-- Human escalation: uncertain or sensitive cases can be routed to people.
+- Primary-boundary hardening: the former unauthenticated `/chat` route is not
+  mounted; employee traffic enters through JWT-protected `/assistant`.
 - Operational backend: admins can manage documents, knowledge, analytics, and
   tenant-scoped access.
-- Engineering evidence: pytest coverage protects RAG, agent tools, SSE,
-  security cases, tenant isolation, and JWT auth.
+- Engineering evidence: pytest coverage protects document retrieval, BM25
+  incremental indexing, primary-route rate limiting, tenant isolation, and JWT auth.
 
 ## Core Capabilities
 
@@ -43,7 +44,6 @@ workflow around company knowledge:
 - Structured operational logs for requests, Agent lifecycle, tool calls, and
   controlled-write outcomes; logs contain identifiers and error codes, not
   business payloads.
-- SSE streaming endpoint.
 - Admin APIs for knowledge, documents, and analytics.
 - JWT authentication:
   - owner self-registers and creates a tenant.
@@ -138,9 +138,10 @@ demo. The first-run `demo` tenant receives one fictional customer record;
 register an owner, sales agent, or employee account through the auth API before
 logging in.
 
-`/api/v1/{tenant_slug}/assistant/*` is the primary application surface. The
-older `/chat` and `/business` routes remain for regression coverage and API
-compatibility, but are marked deprecated in OpenAPI and are not the demo entry.
+`/api/v1/{tenant_slug}/assistant/*` is the employee-Agent application surface.
+The unauthenticated legacy `/chat` route is not mounted. `/business` remains a
+JWT-protected transition API for controlled-write regression coverage, without
+a standalone frontend entry.
 
 For a fully local demo that does not call external embedding APIs, start the app
 with `EMBEDDING_PROVIDER=hash`. To avoid mixing demo vectors with your normal
@@ -170,7 +171,7 @@ The demo script shows:
 - agent forbidden from admin access.
 - cross-tenant access denied.
 - knowledge creation and admin listing.
-- document upload and imported chunk count.
+- document upload plus FAQ/document-chunk unified retrieval regression coverage.
 - role-scoped unified assistant route and backend analytics view.
 
 Full LLM answer quality still depends on `.env`, but the `hash` embedding mode

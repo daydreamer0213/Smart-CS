@@ -92,16 +92,29 @@ async def search_enterprise_knowledge(query: str) -> str:
     from app.core.agent.tools import search_knowledge, set_runtime
     from app.models.knowledge import KnowledgeItem
 
-    set_runtime(ctx["tenant_slug"], ctx["db"], ctx["user"].role)
+    set_runtime(
+        ctx["tenant_slug"],
+        ctx["db"],
+        ctx["user"].role,
+        ctx["tenant_id"],
+    )
     raw = await search_knowledge.ainvoke({"query": query})
     try:
         payload = json.loads(raw)
-        ids = [item["id"] for item in payload.get("results", []) if item.get("id")]
+        ids = [
+            item["id"]
+            for item in payload.get("results", [])
+            if item.get("source_type", "knowledge") == "knowledge" and item.get("id")
+        ]
         items = ctx["db"].query(KnowledgeItem).filter(
             KnowledgeItem.tenant_id == ctx["tenant_id"], KnowledgeItem.id.in_(ids)
         ).all() if ids else []
         visible_ids = {item.id for item in items if not item.audience_roles or ctx["user"].role in item.audience_roles}
-        payload["results"] = [item for item in payload.get("results", []) if item.get("id") in visible_ids]
+        payload["results"] = [
+            item
+            for item in payload.get("results", [])
+            if item.get("source_type", "knowledge") == "document" or item.get("id") in visible_ids
+        ]
         return json.dumps(payload, ensure_ascii=False)
     except (TypeError, ValueError, KeyError):
         return json.dumps({"results": [], "message": "知识检索结果暂时不可用"}, ensure_ascii=False)

@@ -68,8 +68,17 @@ async def test_search_filters_cross_tenant_document_chunk_ids(db, test_tenant, m
     from app.core.agent.hr_agent import search_hr_knowledge, set_hr_runtime
     from app.models.tenant import Tenant
 
-    employee = _user(db, test_tenant, "current-tenant-employee@example.com")
     try:
+        employee = User(
+            tenant_id=test_tenant.id,
+            email="current-tenant-employee@example.com",
+            password_hash=hash_password("Password123"),
+            display_name="Security Test User",
+            role="employee",
+            is_active=True,
+        )
+        db.add(employee)
+        db.flush()
         other_tenant = Tenant(
             slug="other-document-tenant",
             name="Other Document Tenant",

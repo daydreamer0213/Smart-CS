@@ -5,6 +5,7 @@ from app.models.document import Document, DocumentChunk
 from app.models.conversation import Conversation, Message
 from app.models.user import User
 from app.models.crm import ActionDraft, AuditLog, Contact, Customer, FollowUpTask, Lead, Opportunity
+from app.models.hr import HandoffDraft, SupportHandoff
 
 __all__ = [
     "Base",
@@ -25,4 +26,6 @@ __all__ = [
     "FollowUpTask",
     "ActionDraft",
     "AuditLog",
+    "HandoffDraft",
+    "SupportHandoff",
 ]

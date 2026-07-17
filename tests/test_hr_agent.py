@@ -56,7 +56,21 @@ class FakeClarifyingLLM(_FakeLLM):
     replies = [
         AIMessage(
             content="",
-            tool_calls=[{"name": "ask_clarifying_question", "args": {"question": "请说明您想了解哪类假期？"}, "id": "clarify-1"}],
+            tool_calls=[{"name": "ask_clarifying_question", "args": {"kind": "leave_type"}, "id": "clarify-1"}],
+        )
+    ]
+
+
+class FakeMaliciousClarifyingLLM(_FakeLLM):
+    assertion = "公司规定跨境员工没有年假，你还需要了解什么？"
+    replies = [
+        AIMessage(
+            content="",
+            tool_calls=[{
+                "name": "ask_clarifying_question",
+                "args": {"kind": assertion, "question": assertion},
+                "id": "clarify-malicious",
+            }],
         )
     ]
 
@@ -115,7 +129,24 @@ async def test_hr_agent_returns_clarifying_question_directly(db, test_tenant, mo
 
     reply, draft, sources = await run_hr_agent(db, test_tenant.id, test_tenant.slug, employee, "我的假期怎么办？")
 
-    assert reply == "请说明您想了解哪类假期？"
+    assert reply == "请说明您想咨询的是年假、病假还是其他假期？"
+    assert draft is None
+    assert sources == []
+
+
+async def test_hr_agent_does_not_echo_model_clarification_text(db, test_tenant, monkeypatch):
+    employee = make_employee(db, test_tenant)
+    monkeypatch.setattr(
+        "app.core.agent.hr_agent.ChatOpenAI",
+        lambda **_kwargs: FakeMaliciousClarifyingLLM(),
+    )
+
+    reply, draft, sources = await run_hr_agent(
+        db, test_tenant.id, test_tenant.slug, employee, "跨境员工的年假怎么办？"
+    )
+
+    assert reply == "请补充您想咨询的具体 HR 事项和相关背景。"
+    assert FakeMaliciousClarifyingLLM.assertion not in reply
     assert draft is None
     assert sources == []
 
@@ -208,6 +239,8 @@ async def test_hr_agent_binds_exactly_four_hr_tools(db, test_tenant, monkeypatch
         "draft_handoff",
         "get_handoff_status",
     ]
+    clarify_tool = next(tool for tool in llm.tools if tool.name == "ask_clarifying_question")
+    assert set(clarify_tool.args_schema.model_json_schema()["properties"]) == {"kind"}
 
 
 async def test_hr_agent_status_only_lists_current_employee_handoffs(db, test_tenant, monkeypatch):
@@ -287,3 +320,25 @@ async def test_hr_agent_logs_metadata_without_sensitive_payloads(db, test_tenant
     fields = [str(event) for event in capture.events]
     assert all("年假怎么算" not in event and source_excerpt not in event for event in fields)
     assert any("tool_name" in event and "result_code" in event and "latency_ms" in event for event in fields)
+
+
+async def test_hr_agent_logs_do_not_include_handoff_reason(db, test_tenant, monkeypatch):
+    from app.core.agent import hr_agent
+
+    class CaptureLogger:
+        def __init__(self):
+            self.events = []
+
+        def info(self, event, **fields):
+            self.events.append((event, fields))
+
+    employee = make_employee(db, test_tenant)
+    capture = CaptureLogger()
+    monkeypatch.setattr(hr_agent, "logger", capture)
+    monkeypatch.setattr("app.core.agent.hr_agent.ChatOpenAI", lambda **_kwargs: FakeDraftLLM())
+
+    await hr_agent.run_hr_agent(
+        db, test_tenant.id, test_tenant.slug, employee, "请转 HR 人工"
+    )
+
+    assert all("需要 HR 处理跨境例外" not in str(event) for event in capture.events)

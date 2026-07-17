@@ -30,6 +30,13 @@ _runtime: ContextVar[dict] = ContextVar("hr_agent_runtime", default={})
 
 _UNVERIFIED_REPLY = "我无法在未检索到授权 HR 制度来源的情况下确认该政策。请补充信息或申请 HR 人工支持。"
 _PENDING_HANDOFF_REPLY = "已准备待用户确认的 HR 支持请求，确认后才会创建正式工单。"
+_CLARIFYING_QUESTIONS = {
+    "leave_type": "请说明您想咨询的是年假、病假还是其他假期？",
+    "time_range": "请说明您咨询的具体时间范围。",
+    "employment_location": "请说明该问题适用的工作国家或地区。",
+    "request_type": "请说明您想咨询的具体 HR 事项。",
+}
+_DEFAULT_CLARIFYING_QUESTION = "请补充您想咨询的具体 HR 事项和相关背景。"
 
 
 def allowed_hr_skill_names() -> list[str]:
@@ -123,13 +130,14 @@ async def search_hr_knowledge(query: str) -> str:
 
 
 @tool
-def ask_clarifying_question(question: str) -> str:
-    """针对模糊的 HR 问题提出一个澄清问题，不做制度结论。"""
+def ask_clarifying_question(kind: str) -> str:
+    """针对模糊 HR 问题按 kind 提出固定澄清问题，不做制度结论。kind 可选值为 leave_type、time_range、employment_location 或 request_type。"""
     ctx = _ctx()
     started = time.monotonic()
-    ctx["clarifying_question"] = question
+    clarifying_question = _CLARIFYING_QUESTIONS.get(kind, _DEFAULT_CLARIFYING_QUESTION)
+    ctx["clarifying_question"] = clarifying_question
     _log_tool(ctx, "ask_clarifying_question", "QUESTION_RECORDED", 1, started)
-    return json.dumps({"clarifying_question": question}, ensure_ascii=False)
+    return json.dumps({"clarifying_question": clarifying_question}, ensure_ascii=False)
 
 
 @tool
@@ -171,7 +179,8 @@ def _system_prompt() -> str:
         "你是企业 HR 服务助手。回答任何制度、流程或规则结论前，必须先调用 "
         "search_hr_knowledge 并且只能依据返回的授权来源作答。每个制度回答必须包含至少一个 "
         "[source:<source_id>] 引用，且 source_id 必须来自本次检索结果。问题含糊时，调用 "
-        "ask_clarifying_question。检索无来源、遇到例外情况或用户明确要求人工帮助时，调用 "
+        "ask_clarifying_question，并将 kind 设置为 leave_type、time_range、employment_location 或 request_type 之一；"
+        "其他值会触发通用澄清问题。检索无来源、遇到例外情况或用户明确要求人工帮助时，调用 "
         "draft_handoff。draft_handoff 只会准备待用户确认的草稿，绝不得承诺已创建正式工单。"
     )
 

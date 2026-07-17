@@ -3,7 +3,7 @@
 ## Scope
 
 This local proof of concept uses only `docs/fixtures/fastgpt-poc/employee-leave-policy.md`.
-SmartCS remains the owner of tenant authorization, audit, and support handoff.
+FastGPT is a replaceable RAG provider, not SmartCS's public product surface or system of record. SmartCS owns employee identity, tenant authorization, audit events, support-handoff records, and application business state.
 
 ## Storage
 

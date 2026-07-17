@@ -49,6 +49,49 @@ async def test_document_upload_accepts_and_returns_audience_roles(
     assert response.json()["audience_roles"] == ["admin"]
 
 
+async def test_document_upload_accepts_repeated_audience_roles(
+    admin_client, test_tenant, monkeypatch,
+):
+    captured = {}
+
+    async def fake_upload(*_args, audience_roles=None, **_kwargs):
+        captured["audience_roles"] = audience_roles
+        return SimpleNamespace(
+            id="doc-1", filename="policy.txt", chunk_count=1,
+            status="ready", audience_roles=audience_roles,
+        )
+
+    monkeypatch.setattr(document_service, "upload_document", fake_upload)
+    response = await admin_client.post(
+        f"/api/v1/admin/{test_tenant.slug}/documents/upload",
+        files=[
+            ("file", ("policy.txt", b"policy", "text/plain")),
+            ("audience_roles", (None, "owner")),
+            ("audience_roles", (None, "admin")),
+        ],
+    )
+
+    assert response.status_code == 201
+    assert captured["audience_roles"] == ["owner", "admin"]
+    assert response.json()["audience_roles"] == ["owner", "admin"]
+
+
+async def test_document_upload_rejects_invalid_audience_role(
+    admin_client, test_tenant, monkeypatch,
+):
+    async def fail_if_called(*_args, **_kwargs):
+        pytest.fail("upload_document must not be called for an invalid role")
+
+    monkeypatch.setattr(document_service, "upload_document", fail_if_called)
+    response = await admin_client.post(
+        f"/api/v1/admin/{test_tenant.slug}/documents/upload",
+        files={"file": ("policy.txt", b"policy", "text/plain")},
+        data={"audience_roles": "invalid"},
+    )
+
+    assert response.status_code == 422
+
+
 async def test_document_list_returns_audience_roles(admin_client, db, test_tenant):
     db.add(Document(
         tenant_id=test_tenant.id,

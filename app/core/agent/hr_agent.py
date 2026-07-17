@@ -1,6 +1,7 @@
 """Governed HR service agent with a deliberately small skill catalog."""
 
 import json
+import re
 import time
 from contextvars import ContextVar
 
@@ -47,7 +48,7 @@ def set_hr_runtime(db: Session, tenant_id: str, tenant_slug: str, user: User, me
         "draft": None,
         "search_attempted": False,
         "empty_search": False,
-        "status_requested": False,
+        "status_reply": None,
     })
 
 
@@ -76,6 +77,19 @@ def _normalize_sources(payload: dict) -> list[dict]:
             "score": result.get("score"),
         })
     return sources
+
+
+def _has_authorized_citations(reply: str, sources: list[dict]) -> bool:
+    cited_ids = re.findall(r"\[source:([^\]\s]+)\]", reply)
+    authorized_ids = {source["source_id"] for source in sources}
+    return bool(cited_ids) and all(source_id in authorized_ids for source_id in cited_ids)
+
+
+def _format_handoff_status(handoffs: list) -> str:
+    if not handoffs:
+        return "您当前没有 HR 支持请求。"
+    lines = [f"- {handoff.id}: {handoff.status}" for handoff in handoffs]
+    return "您的 HR 支持请求状态：\n" + "\n".join(lines)
 
 
 def _log_tool(ctx: dict, tool_name: str, result_code: str, result_count: int, started: float) -> None:
@@ -146,8 +160,8 @@ def get_handoff_status() -> str:
     """查询当前员工本人可见的 HR 支持请求状态。"""
     ctx = _ctx()
     started = time.monotonic()
-    ctx["status_requested"] = True
     handoffs = hr_support_service.list_my_handoffs(ctx["db"], ctx["tenant_id"], ctx["user"].id)
+    ctx["status_reply"] = _format_handoff_status(handoffs)
     _log_tool(ctx, "get_handoff_status", "OK", len(handoffs), started)
     return json.dumps({"handoffs": [handoff.model_dump(mode="json") for handoff in handoffs]}, ensure_ascii=False)
 
@@ -155,7 +169,8 @@ def get_handoff_status() -> str:
 def _system_prompt() -> str:
     return (
         "你是企业 HR 服务助手。回答任何制度、流程或规则结论前，必须先调用 "
-        "search_hr_knowledge 并且只能依据返回的授权来源作答。问题含糊时，调用 "
+        "search_hr_knowledge 并且只能依据返回的授权来源作答。每个制度回答必须包含至少一个 "
+        "[source:<source_id>] 引用，且 source_id 必须来自本次检索结果。问题含糊时，调用 "
         "ask_clarifying_question。检索无来源、遇到例外情况或用户明确要求人工帮助时，调用 "
         "draft_handoff。draft_handoff 只会准备待用户确认的草稿，绝不得承诺已创建正式工单。"
     )
@@ -201,11 +216,12 @@ async def run_hr_agent(
                     return ctx["clarifying_question"], ctx["draft"], ctx["sources"]
                 if ctx["draft"]:
                     return _PENDING_HANDOFF_REPLY, ctx["draft"], ctx["sources"]
-                if ctx["status_requested"]:
-                    return str(reply.content or _UNVERIFIED_REPLY), None, ctx["sources"]
                 if not ctx["search_attempted"] or ctx["empty_search"]:
                     return _UNVERIFIED_REPLY, None, ctx["sources"]
-                return str(reply.content or _UNVERIFIED_REPLY), None, ctx["sources"]
+                content = str(reply.content or "")
+                if not _has_authorized_citations(content, ctx["sources"]):
+                    return _UNVERIFIED_REPLY, None, ctx["sources"]
+                return content, None, ctx["sources"]
 
             for call in reply.tool_calls:
                 tool_calls += 1
@@ -220,6 +236,8 @@ async def run_hr_agent(
                     return ctx["clarifying_question"], ctx["draft"], ctx["sources"]
                 if ctx["draft"]:
                     return _PENDING_HANDOFF_REPLY, ctx["draft"], ctx["sources"]
+                if ctx["status_reply"] is not None:
+                    return ctx["status_reply"], None, ctx["sources"]
 
         return _UNVERIFIED_REPLY, ctx["draft"], ctx["sources"]
     finally:

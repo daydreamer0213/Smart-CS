@@ -17,17 +17,16 @@ Record Docker Desktop version, Docker Engine version, Compose version, the D: fr
 
 ## Preflight result (2026-07-17)
 
-Status: blocked.
+Status: passed.
 
 - Docker Desktop 4.82.0 is running with Engine 29.6.1 and Compose v5.3.0.
 - The `desktop-linux` context uses the WSL 2 backend. `docker version`, `docker compose version`, `docker info`, and `docker ps` all return successfully.
 - `D:` has 75.89 GiB free after installation, which is sufficient for this bounded PoC.
+- Docker disk image location: `D:`.
 - No FastGPT or PoC images have been pulled.
 - A copied legacy Docker Desktop 4.79.0 directory and a 7.15 GiB `docker_data.vhdx` exist under `D:\2026.07.09\docker`. Leave them untouched; do not run the copied binaries or attach the old data disk directly.
 
-Reason: Docker Desktop disk-image location has not yet been confirmed through `Settings -> Resources -> Advanced`.
-
-Next action: confirm the UI field is on `D:`, then record only `Docker disk image location: D:` and rerun the preflight without recording credentials.
+Next action: deploy the bounded FastGPT stack to the deployment root, then rerun the preflight without recording credentials.
 
 ## Shutdown
 

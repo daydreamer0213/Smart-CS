@@ -2,7 +2,9 @@
 
 import structlog
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from typing import Literal
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 logger = structlog.get_logger()
@@ -27,6 +29,7 @@ MAX_FILE_SIZE = 20 * 1024 * 1024
 async def upload(
     tenant_slug: str,
     file: UploadFile = File(...),
+    audience_roles: list[Literal["owner", "admin", "agent", "employee"]] = Form(default=[]),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_tenant),
     _admin=Depends(admin_auth),
@@ -43,7 +46,7 @@ async def upload(
 
     try:
         doc = await document_service.upload_document(
-            db, tenant.id, tenant_slug, file.filename, data,
+            db, tenant.id, tenant_slug, file.filename, data, audience_roles=audience_roles,
         )
     except ValueError as e:
         msg = str(e)
@@ -57,6 +60,7 @@ async def upload(
         filename=doc.filename,
         chunk_count=doc.chunk_count,
         status=doc.status,
+        audience_roles=doc.audience_roles or [],
     )
 
 
@@ -77,6 +81,7 @@ async def list_docs(
             file_type=d.file_type, file_size=d.file_size, file_hash=d.file_hash,
             chunk_count=d.chunk_count, status=d.status,
             error_message=d.error_message,
+            audience_roles=d.audience_roles or [],
             created_at=d.created_at.isoformat() if d.created_at else "",
             updated_at=d.updated_at.isoformat() if d.updated_at else "",
         ))

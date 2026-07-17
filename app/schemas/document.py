@@ -13,6 +13,7 @@ class DocumentResponse(BaseModel):
     chunk_count: int
     status: str
     error_message: str | None
+    audience_roles: list[str]
     created_at: str
     updated_at: str
 
@@ -45,3 +46,4 @@ class DocumentUploadResponse(BaseModel):
     filename: str
     chunk_count: int
     status: str
+    audience_roles: list[str]

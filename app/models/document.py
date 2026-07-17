@@ -1,6 +1,6 @@
 """Document and DocumentChunk models — uploaded files with chunk-level storage."""
 
-from sqlalchemy import Column, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base, TimestampMixin
@@ -17,6 +17,7 @@ class Document(Base, TimestampMixin):
     chunk_count = Column(Integer, default=0)
     status = Column(String(20), default="processing", nullable=False)
     error_message = Column(String(500), nullable=True)
+    audience_roles = Column(JSON, default=list, nullable=False)
 
     tenant = relationship("Tenant")
     chunks = relationship(

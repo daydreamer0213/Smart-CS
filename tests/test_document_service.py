@@ -3,6 +3,33 @@
 import pytest
 
 
+class _FakeRetrieval:
+    async def embed(self, texts):
+        return [[0.0] for _ in texts]
+
+    def add(self, *_args, **_kwargs):
+        pass
+
+    def delete(self, *_args, **_kwargs):
+        pass
+
+    def remove(self, *_args, **_kwargs):
+        pass
+
+
+@pytest.fixture(autouse=True)
+def fake_retrieval(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.document_service.get_embedding_provider", _FakeRetrieval
+    )
+    monkeypatch.setattr(
+        "app.services.document_service.get_vector_store", _FakeRetrieval
+    )
+    monkeypatch.setattr(
+        "app.services.document_service.get_bm25_manager", _FakeRetrieval
+    )
+
+
 class TestParseFile:
     def test_parse_txt(self):
         from app.core.parsing.parser import parse_file
@@ -56,6 +83,26 @@ class TestChunker:
 
 
 class TestDocumentUpload:
+    async def test_upload_document_persists_audience_roles(
+        self, db, test_tenant, monkeypatch,
+    ):
+        from app.services.document_service import upload_document
+
+        async def fake_chunk_text(_text):
+            return ["policy text"]
+
+        monkeypatch.setattr(
+            "app.services.document_service.parse_file", lambda *_: "policy text"
+        )
+        monkeypatch.setattr("app.services.document_service.chunk_text", fake_chunk_text)
+
+        doc = await upload_document(
+            db, test_tenant.id, test_tenant.slug, "policy.txt", b"policy text",
+            audience_roles=["admin"],
+        )
+
+        assert doc.audience_roles == ["admin"]
+
     async def test_upload_txt_creates_document(self, db, test_tenant):
         """Upload a text file and verify Document + chunks are created."""
         from app.services.document_service import upload_document
@@ -65,6 +112,7 @@ class TestDocumentUpload:
             "faq.txt", b"Q: test question\nA: test answer",
         )
         assert doc.status in ("ready", "failed")
+        assert doc.audience_roles == []
         if doc.status == "ready":
             assert doc.chunk_count > 0
 

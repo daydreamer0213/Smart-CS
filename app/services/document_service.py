@@ -30,6 +30,7 @@ async def upload_document(
     tenant_slug: str,
     filename: str,
     file_data: bytes,
+    audience_roles: list[str] | None = None,
 ) -> Document:
     if len(file_data) == 0:
         raise ValueError("Empty file")
@@ -57,6 +58,7 @@ async def upload_document(
         file_size=len(file_data),
         file_hash=file_hash,
         status="processing",
+        audience_roles=audience_roles or [],
     )
     db.add(doc)
     db.flush()

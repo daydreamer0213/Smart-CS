@@ -368,6 +368,11 @@ async def test_hr_agent_logs_metadata_without_sensitive_payloads(db, test_tenant
 
     await hr_agent.run_hr_agent(db, test_tenant.id, test_tenant.slug, employee, question)
 
+    assert [event for event, _ in capture.events] == [
+        "hr_agent_started",
+        "hr_agent_tool_completed",
+        "hr_agent_completed",
+    ]
     events = {event: fields for event, fields in capture.events}
     started = events["hr_agent_started"]
     tool_completed = events["hr_agent_tool_completed"]

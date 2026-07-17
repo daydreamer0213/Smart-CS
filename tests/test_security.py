@@ -69,50 +69,76 @@ async def test_search_filters_cross_tenant_document_chunk_ids(db, test_tenant, m
     from app.models.tenant import Tenant
 
     employee = _user(db, test_tenant, "current-tenant-employee@example.com")
-    other_tenant = Tenant(
-        slug="other-document-tenant",
-        name="Other Document Tenant",
-        config_json={},
-        is_active=True,
-    )
-    db.add(other_tenant)
-    db.flush()
-    document = Document(
-        tenant_id=other_tenant.id,
-        filename="other-tenant-policy.txt",
-        file_type="txt",
-        file_hash="other-tenant-document-hash",
-        status="ready",
-    )
-    db.add(document)
-    db.flush()
-    chunk = DocumentChunk(
-        document_id=document.id,
-        chunk_index=0,
-        content="Only the other tenant may see this policy.",
-        status="active",
-    )
-    db.add(chunk)
-    db.flush()
+    try:
+        other_tenant = Tenant(
+            slug="other-document-tenant",
+            name="Other Document Tenant",
+            config_json={},
+            is_active=True,
+        )
+        db.add(other_tenant)
+        db.flush()
+        current_document = Document(
+            tenant_id=test_tenant.id,
+            filename="current-tenant-policy.txt",
+            file_type="txt",
+            file_hash="current-tenant-document-hash",
+            status="ready",
+        )
+        other_document = Document(
+            tenant_id=other_tenant.id,
+            filename="other-tenant-policy.txt",
+            file_type="txt",
+            file_hash="other-tenant-document-hash",
+            status="ready",
+        )
+        db.add_all([current_document, other_document])
+        db.flush()
+        current_content = "Only the current tenant may see this policy."
+        other_content = "Only the other tenant may see this policy."
+        current_chunk = DocumentChunk(
+            document_id=current_document.id,
+            chunk_index=0,
+            content=current_content,
+            status="active",
+        )
+        other_chunk = DocumentChunk(
+            document_id=other_document.id,
+            chunk_index=0,
+            content=other_content,
+            status="active",
+        )
+        db.add_all([current_chunk, other_chunk])
+        db.flush()
 
-    class FakeEmbedding:
-        async def embed(self, _texts):
-            return [[0.0]]
+        class FakeEmbedding:
+            async def embed(self, _texts):
+                return [[0.0]]
 
-    class FakeVectorStore:
-        def search(self, *_args):
-            return [(chunk.id, 0.1)]
+        class FakeVectorStore:
+            def search(self, *_args):
+                return [(current_chunk.id, 0.1), (other_chunk.id, 0.2)]
 
-    class FakeBm25:
-        def search(self, *_args):
-            return [(chunk.id, 1.0)]
+        class FakeBm25:
+            def search(self, *_args):
+                return [(current_chunk.id, 1.0), (other_chunk.id, 2.0)]
 
-    monkeypatch.setattr("app.core.agent.tools.get_embedding_provider", lambda: FakeEmbedding())
-    monkeypatch.setattr("app.core.agent.tools.get_vector_store", lambda: FakeVectorStore())
-    monkeypatch.setattr("app.core.agent.tools.get_bm25_manager", lambda: FakeBm25())
+        monkeypatch.setattr("app.core.agent.tools.get_embedding_provider", lambda: FakeEmbedding())
+        monkeypatch.setattr("app.core.agent.tools.get_vector_store", lambda: FakeVectorStore())
+        monkeypatch.setattr("app.core.agent.tools.get_bm25_manager", lambda: FakeBm25())
 
-    set_hr_runtime(db, test_tenant.id, test_tenant.slug, employee, "What is the leave policy?")
-    result = json.loads(await search_hr_knowledge.ainvoke({"query": "leave policy"}))
+        set_hr_runtime(db, test_tenant.id, test_tenant.slug, employee, "What is the leave policy?")
+        result = json.loads(await search_hr_knowledge.ainvoke({"query": "leave policy"}))
 
-    assert result["sources"] == []
-    assert result["result_count"] == 0
+        sources = result["sources"]
+        assert [{key: source[key] for key in ("source_id", "title", "excerpt")} for source in sources] == [
+            {
+                "source_id": current_chunk.id,
+                "title": current_document.filename,
+                "excerpt": current_content,
+            }
+        ]
+        assert other_chunk.id not in {source["source_id"] for source in sources}
+        assert result["result_count"] == 1
+    finally:
+        db.rollback()

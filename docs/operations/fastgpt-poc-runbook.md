@@ -8,23 +8,25 @@ SmartCS remains the owner of tenant authorization, audit, and support handoff.
 ## Storage
 
 - Deployment root: `D:\DevData\smartcs-fastgpt-poc\deployment`
-- Docker Desktop disk image: record the supported Docker Desktop setting before image pulls.
+- Docker Desktop program: `D:\DevData\docker-desktop\app`
+- Docker Desktop WSL data: `D:\DevData\docker-desktop\wsl`
 - Local credentials: `.env.fastgpt-poc` at repository root; this file is ignored by Git.
 
 ## Required preflight output
 
 Record Docker Desktop version, Docker Engine version, Compose version, the D: free space before deployment, and the configured Docker disk-image location. Do not record passwords, API keys, app IDs, or private IP addresses.
 
-## Preflight result (2026-07-16)
+## Preflight result (2026-07-17)
 
-Status: blocked before deployment.
+Status: passed for Docker deployment. No FastGPT or PoC images have been pulled.
 
-- `D:` has 81.36 GiB free, which is sufficient for this bounded PoC.
-- Docker Desktop is not installed on this Windows system: `docker version` and `docker compose version` are unavailable.
-- WSL is not yet usable for Docker Desktop initialization.
+- Docker Desktop 4.82.0 is running with Engine 29.6.1 and Compose v5.3.0.
+- The `desktop-linux` context uses the WSL 2 backend. `docker version`, `docker compose version`, `docker info`, and `docker ps` all return successfully.
+- `D:` has 75.89 GiB free after installation, which is sufficient for this bounded PoC.
+- The active WSL disk is `D:\DevData\docker-desktop\wsl\disk\docker_data.vhdx`; Docker Desktop's program files are also on `D:`.
 - A copied legacy Docker Desktop 4.79.0 directory and a 7.15 GiB `docker_data.vhdx` exist under `D:\2026.07.09\docker`. Leave them untouched; do not run the copied binaries or attach the old data disk directly.
 
-Next action: reinstall Docker Desktop, complete WSL 2 initialization, and set its supported disk-image location to `D:\DevData\docker-desktop` before pulling images. Then rerun the required preflight and update this section without recording credentials.
+Next action: deploy the bounded FastGPT stack to the deployment root, then rerun the preflight without recording credentials.
 
 ## Shutdown
 

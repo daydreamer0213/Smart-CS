@@ -20,6 +20,7 @@ from app.api.auth import router as auth_router
 from app.api.assistant import router as assistant_router
 from app.api.business import router as business_router
 from app.api.health import router as health_router
+from app.api.hr_support import router as hr_support_router
 from app.config import settings
 from app.middleware.error_handler import register_error_handlers
 from app.middleware.logging import LoggingMiddleware, setup_structlog
@@ -189,6 +190,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(assistant_router)
     app.include_router(business_router)
+    app.include_router(hr_support_router)
     app.include_router(admin_auth_router)
     app.include_router(admin_document_router)
     app.include_router(admin_knowledge_router)

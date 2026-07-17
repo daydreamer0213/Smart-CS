@@ -3,6 +3,8 @@
 from app.config import settings
 from app.core.auth.security import hash_password
 from app.core.auth.token import create_access_token
+from app.models.conversation import Conversation, Message
+from app.models.tenant import Tenant
 from app.models.user import User
 from app.services.hr_support_service import create_handoff_draft
 
@@ -73,6 +75,16 @@ async def test_assistant_keeps_history_within_authenticated_user_session(client,
 
 async def test_assistant_returns_503_when_api_key_is_not_configured(client, db, test_tenant, monkeypatch):
     user = _employee(db, test_tenant)
+    events = []
+
+    class CaptureLogger:
+        def info(self, event, **fields):
+            events.append((event, fields))
+
+        def warning(self, event, **fields):
+            events.append((event, fields))
+
+    monkeypatch.setattr("app.api.assistant.logger", CaptureLogger())
     monkeypatch.setattr(settings, "llm_api_key", "")
 
     response = await client.post(
@@ -83,6 +95,47 @@ async def test_assistant_returns_503_when_api_key_is_not_configured(client, db, 
 
     assert response.status_code == 503
     assert response.json()["error"]["message"] == "Assistant model is not configured"
+    unavailable_fields = next(fields for event, fields in events if event == "assistant_model_unavailable")
+    assert unavailable_fields["result_code"] == "MISSING_API_KEY"
+    assert "reason" not in unavailable_fields
+
+
+async def test_assistant_cross_tenant_request_has_no_agent_or_history_side_effects(client, db, test_tenant, monkeypatch):
+    user = _employee(db, test_tenant)
+    other_tenant = Tenant(
+        slug=f"other-{test_tenant.slug}",
+        name="Other Tenant",
+        config_json={},
+        is_active=True,
+    )
+    db.add(other_tenant)
+    db.commit()
+    session_id = f"cross-tenant-{test_tenant.id}"
+    agent_called = False
+
+    async def fail_if_called(*_args, **_kwargs):
+        nonlocal agent_called
+        agent_called = True
+        raise AssertionError("HR agent must not run for a cross-tenant request")
+
+    monkeypatch.setattr("app.api.assistant.run_hr_agent", fail_if_called)
+    response = await client.post(
+        f"/api/v1/{other_tenant.slug}/assistant/chat",
+        headers={"Authorization": f"Bearer {create_access_token(user)}"},
+        json={"session_id": session_id, "message": "年假如何计算？"},
+    )
+
+    conversations = db.query(Conversation).filter(
+        Conversation.visitor_id == user.id,
+        Conversation.session_id == session_id,
+    )
+    assert response.status_code == 403
+    assert agent_called is False
+    assert conversations.count() == 0
+    assert db.query(Message).join(Conversation).filter(
+        Conversation.visitor_id == user.id,
+        Conversation.session_id == session_id,
+    ).count() == 0
 
 
 async def test_assistant_returns_readable_unavailable_error(client, db, test_tenant, monkeypatch):

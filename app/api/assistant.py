@@ -44,7 +44,7 @@ async def chat(
                 "assistant_model_unavailable",
                 tenant_id=tenant.id,
                 actor_user_id=user.id,
-                reason="missing_api_key",
+                result_code="MISSING_API_KEY",
             )
             raise HTTPException(status_code=503, detail="Assistant model is not configured")
         session_id = body.session_id or str(uuid.uuid4())

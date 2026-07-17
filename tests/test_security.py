@@ -68,6 +68,7 @@ async def test_search_filters_cross_tenant_document_chunk_ids(db, test_tenant, m
     from app.core.agent.hr_agent import search_hr_knowledge, set_hr_runtime
     from app.models.tenant import Tenant
 
+    employee = _user(db, test_tenant, "current-tenant-employee@example.com")
     other_tenant = Tenant(
         slug="other-document-tenant",
         name="Other Document Tenant",
@@ -76,7 +77,6 @@ async def test_search_filters_cross_tenant_document_chunk_ids(db, test_tenant, m
     )
     db.add(other_tenant)
     db.flush()
-    employee = _user(db, test_tenant, "current-tenant-employee@example.com")
     document = Document(
         tenant_id=other_tenant.id,
         filename="other-tenant-policy.txt",
@@ -93,7 +93,7 @@ async def test_search_filters_cross_tenant_document_chunk_ids(db, test_tenant, m
         status="active",
     )
     db.add(chunk)
-    db.commit()
+    db.flush()
 
     class FakeEmbedding:
         async def embed(self, _texts):

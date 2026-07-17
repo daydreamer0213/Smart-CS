@@ -346,6 +346,7 @@ async def test_hr_agent_logs_metadata_without_sensitive_payloads(db, test_tenant
     employee = make_employee(db, test_tenant)
     capture = CaptureLogger()
     source_excerpt = "仅内部可见的年假摘录"
+    question = "年假怎么算？"
 
     async def fake_search(_args):
         return json.dumps({
@@ -365,11 +366,28 @@ async def test_hr_agent_logs_metadata_without_sensitive_payloads(db, test_tenant
         SimpleNamespace(ainvoke=fake_search),
     )
 
-    await hr_agent.run_hr_agent(db, test_tenant.id, test_tenant.slug, employee, "年假怎么算？")
+    await hr_agent.run_hr_agent(db, test_tenant.id, test_tenant.slug, employee, question)
 
-    fields = [str(event) for event in capture.events]
-    assert all("年假怎么算" not in event and source_excerpt not in event for event in fields)
-    assert any("tool_name" in event and "result_code" in event and "latency_ms" in event for event in fields)
+    events = {event: fields for event, fields in capture.events}
+    started = events["hr_agent_started"]
+    tool_completed = events["hr_agent_tool_completed"]
+    completed = events["hr_agent_completed"]
+
+    for fields in (started, completed):
+        assert fields["tenant_id"] == test_tenant.id
+        assert fields["actor_user_id"] == employee.id
+        assert fields["role"] == "employee"
+
+    assert tool_completed["tenant_id"] == test_tenant.id
+    assert tool_completed["actor_user_id"] == employee.id
+    assert tool_completed["role"] == "employee"
+    assert tool_completed["tool_name"] == "search_hr_knowledge"
+    assert tool_completed["result_code"] == "OK"
+    assert tool_completed["result_count"] == 1
+    assert "latency_ms" in tool_completed
+
+    field_values = [str(value) for _, fields in capture.events for value in fields.values()]
+    assert all(question not in value and source_excerpt not in value for value in field_values)
 
 
 async def test_hr_agent_logs_do_not_include_handoff_reason(db, test_tenant, monkeypatch):

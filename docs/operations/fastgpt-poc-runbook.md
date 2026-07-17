@@ -26,7 +26,18 @@ Status: passed.
 - No FastGPT or PoC images have been pulled.
 - A copied legacy Docker Desktop 4.79.0 directory and a 7.15 GiB `docker_data.vhdx` exist under `D:\2026.07.09\docker`. Leave them untouched; do not run the copied binaries or attach the old data disk directly.
 
-Next action: deploy the bounded FastGPT stack to the deployment root, then rerun the preflight without recording credentials.
+## Deployment result (2026-07-17)
+
+Status: passed.
+
+- Compose source: FastGPT documented v4.15 PgVector deployment.
+- Image tags: `registry.cn-hangzhou.aliyuncs.com/fastgpt/mongo:5.0.32`, `registry.cn-hangzhou.aliyuncs.com/fastgpt/pgvector:0.8.0-pg15`, `registry.cn-hangzhou.aliyuncs.com/fastgpt/fastgpt-plugin:v1.0.1`, `registry.cn-hangzhou.aliyuncs.com/fastgpt/minio:RELEASE.2025-09-07T16-13-09Z`, `registry.cn-hangzhou.aliyuncs.com/fastgpt/redis:7.2-alpine`, `registry.cn-hangzhou.aliyuncs.com/fastgpt/fastgpt:v4.15.1`, `registry.cn-hangzhou.aliyuncs.com/fastgpt/fastgpt-code-sandbox:v4.15.0`, `registry.cn-hangzhou.aliyuncs.com/fastgpt/fastgpt-mcp_server:v4.14.23`, and `registry.cn-hangzhou.aliyuncs.com/labring/aiproxy:v0.6.5`.
+- FastGPT local endpoint: `http://127.0.0.1:3000` returned HTTP 200.
+- Container health: passed. All required containers are running; components with health checks report healthy, and FastGPT/AIProxy both have zero restarts after an observation window.
+- Generated credentials: stored only under `D:\DevData\smartcs-fastgpt-poc\deployment`.
+- `D:` retained 67.23 GiB free after deployment.
+
+Next action: configure a local model provider, import the one fictional policy document, and create the bounded knowledge-base Q&A application.
 
 ## Shutdown
 

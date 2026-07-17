@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage
 
 from app.core.agent.hr_agent import allowed_hr_skill_names, run_hr_agent
 from app.core.auth.security import hash_password
-from app.models.hr import SupportHandoff
+from app.models.hr import HandoffDraft, SupportHandoff
 from app.models.user import User
 
 
@@ -157,20 +157,28 @@ async def test_no_source_can_prepare_draft_but_not_handoff(db, test_tenant, monk
         SimpleNamespace(ainvoke=fake_search),
     )
 
-    question = "How should cross-border annual leave be handled?"
-    _, draft, sources = await run_hr_agent(
-        db, test_tenant.id, test_tenant.slug, employee, question
-    )
+    try:
+        question = "How should cross-border annual leave be handled?"
+        _, draft, sources = await run_hr_agent(
+            db, test_tenant.id, test_tenant.slug, employee, question
+        )
 
-    assert draft is not None
-    assert draft.question == question
-    assert draft.reason == "no authorized HR source found"
-    assert sources == []
-    assert db.query(SupportHandoff).filter(
-        SupportHandoff.tenant_id == test_tenant.id,
-        SupportHandoff.requester_user_id == employee.id,
-    ).count() == 0
-    assert llm.calls == 2
+        assert draft is not None
+        assert draft.question == question
+        assert draft.reason == "no authorized HR source found"
+        assert sources == []
+        assert db.query(SupportHandoff).filter(
+            SupportHandoff.tenant_id == test_tenant.id,
+            SupportHandoff.requester_user_id == employee.id,
+        ).count() == 0
+        assert llm.calls == 2
+    finally:
+        db.query(HandoffDraft).filter(
+            HandoffDraft.tenant_id == test_tenant.id,
+            HandoffDraft.requester_user_id == employee.id,
+        ).delete(synchronize_session=False)
+        db.query(User).filter(User.id == employee.id).delete(synchronize_session=False)
+        db.commit()
 
 
 async def test_hr_agent_returns_clarifying_question_directly(db, test_tenant, monkeypatch):

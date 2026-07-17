@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field
 
-from app.schemas.business import DraftResponse
+from app.schemas.hr_support import HandoffDraftResponse, SourceCitation
 
 
 class AssistantChatRequest(BaseModel):
@@ -14,4 +14,5 @@ class AssistantChatResponse(BaseModel):
     session_id: str
     reply: str
     enabled_skills: list[str]
-    pending_action: DraftResponse | None = None
+    sources: list[SourceCitation] = Field(default_factory=list)
+    pending_handoff: HandoffDraftResponse | None = None

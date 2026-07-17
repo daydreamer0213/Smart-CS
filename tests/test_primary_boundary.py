@@ -31,12 +31,12 @@ async def test_assistant_route_is_rate_limited(engine, db, test_tenant, monkeypa
 
     user = _employee(db, test_tenant)
 
-    async def fake_agent(*_args):
-        return "ok", None
+    async def fake_hr_agent(*_args, **_kwargs):
+        return "ok", None, []
 
     old_limit = settings.rate_limit_per_minute
     settings.rate_limit_per_minute = 1
-    monkeypatch.setattr("app.api.assistant.run_business_agent", fake_agent)
+    monkeypatch.setattr("app.api.assistant.run_hr_agent", fake_hr_agent)
     try:
         app = create_app()
         headers = {"Authorization": f"Bearer {create_access_token(user)}"}
@@ -56,6 +56,19 @@ async def test_assistant_route_is_rate_limited(engine, db, test_tenant, monkeypa
 
     assert first.status_code == 200
     assert business.status_code == 429
+
+
+async def test_primary_assistant_does_not_expose_crm_confirmation(client, db, test_tenant):
+    user = _employee(db, test_tenant)
+    response = await client.post(
+        f"/api/v1/{test_tenant.slug}/assistant/action-drafts/not-an-hr-draft/confirm",
+        headers={
+            "Authorization": f"Bearer {create_access_token(user)}",
+            "Idempotency-Key": "legacy-crm-0001",
+        },
+    )
+
+    assert response.status_code == 404
 
 
 async def test_search_knowledge_returns_document_chunk(db, test_tenant, monkeypatch):

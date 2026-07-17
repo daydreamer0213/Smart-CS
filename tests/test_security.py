@@ -151,3 +151,87 @@ async def test_search_filters_cross_tenant_document_chunk_ids(db, test_tenant, m
         assert result["result_count"] == 1
     finally:
         db.rollback()
+
+
+async def test_search_filters_document_chunks_by_audience_role(db, test_tenant, monkeypatch):
+    from app.core.agent.hr_agent import search_hr_knowledge, set_hr_runtime
+
+    try:
+        employee = User(
+            tenant_id=test_tenant.id,
+            email="document-role-employee@example.com",
+            password_hash=hash_password("Password123"),
+            display_name="Document Role Employee",
+            role="employee",
+            is_active=True,
+        )
+        admin = User(
+            tenant_id=test_tenant.id,
+            email="document-role-admin@example.com",
+            password_hash=hash_password("Password123"),
+            display_name="Document Role Admin",
+            role="admin",
+            is_active=True,
+        )
+        restricted_document = Document(
+            tenant_id=test_tenant.id,
+            filename="admin-policy.txt",
+            file_type="txt",
+            file_hash="admin-policy-hash",
+            status="ready",
+            audience_roles=["admin"],
+        )
+        legacy_document = Document(
+            tenant_id=test_tenant.id,
+            filename="general-policy.txt",
+            file_type="txt",
+            file_hash="general-policy-hash",
+            status="ready",
+            audience_roles=[],
+        )
+        db.add_all([employee, admin, restricted_document, legacy_document])
+        db.flush()
+        restricted_chunk = DocumentChunk(
+            document_id=restricted_document.id,
+            chunk_index=0,
+            content="Admin-only policy.",
+            status="active",
+        )
+        legacy_chunk = DocumentChunk(
+            document_id=legacy_document.id,
+            chunk_index=0,
+            content="General policy.",
+            status="active",
+        )
+        db.add_all([restricted_chunk, legacy_chunk])
+        db.flush()
+
+        class FakeEmbedding:
+            async def embed(self, _texts):
+                return [[0.0]]
+
+        class FakeVectorStore:
+            def search(self, *_args):
+                return [(restricted_chunk.id, 0.2), (legacy_chunk.id, 0.1)]
+
+        class FakeBm25:
+            def search(self, *_args):
+                return [(restricted_chunk.id, 2.0), (legacy_chunk.id, 1.0)]
+
+        monkeypatch.setattr("app.core.agent.tools.get_embedding_provider", lambda: FakeEmbedding())
+        monkeypatch.setattr("app.core.agent.tools.get_vector_store", lambda: FakeVectorStore())
+        monkeypatch.setattr("app.core.agent.tools.get_bm25_manager", lambda: FakeBm25())
+
+        set_hr_runtime(db, test_tenant.id, test_tenant.slug, employee, "policy")
+        employee_result = json.loads(await search_hr_knowledge.ainvoke({"query": "policy"}))
+        employee_sources = {item["source_id"] for item in employee_result["sources"]}
+        assert restricted_chunk.id not in employee_sources
+        assert legacy_chunk.id in employee_sources
+
+        set_hr_runtime(db, test_tenant.id, test_tenant.slug, admin, "policy")
+        admin_result = json.loads(await search_hr_knowledge.ainvoke({"query": "policy"}))
+        admin_sources = {item["source_id"] for item in admin_result["sources"]}
+        assert restricted_chunk.id in admin_sources
+        assert legacy_chunk.id in admin_sources
+    finally:
+        db.rollback()

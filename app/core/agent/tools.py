@@ -135,6 +135,8 @@ async def search_knowledge(query: str) -> str:
             if chunk_entry is None:
                 continue
             chunk, document = chunk_entry
+            if document.audience_roles and role not in document.audience_roles:
+                continue
             results.append({
                 "id": chunk.id,
                 "source_type": "document",

@@ -237,7 +237,7 @@ async def run_hr_agent(
                 selected = next((item for item in tools if item.name == call["name"]), None)
                 if selected is None:
                     content = json.dumps({"error": {"code": "TOOL_NOT_ALLOWED"}}, ensure_ascii=False)
-                    _log_tool(ctx, call["name"], "NOT_ALLOWED", 0, time.monotonic())
+                    _log_tool(ctx, "unknown_tool", "NOT_ALLOWED", 0, time.monotonic())
                 else:
                     content = await selected.ainvoke(call.get("args", {}))
                 messages.append(ToolMessage(content=str(content), tool_call_id=call["id"]))

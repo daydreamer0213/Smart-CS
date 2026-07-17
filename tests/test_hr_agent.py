@@ -43,6 +43,42 @@ class _FakeLLM:
         return self.replies.pop(0)
 
 
+async def test_hr_agent_sanitizes_unknown_tool_name_in_structured_logs(db, test_tenant, monkeypatch):
+    from app.core.agent import hr_agent
+
+    class CaptureLogger:
+        def __init__(self):
+            self.events = []
+
+        def info(self, event, **fields):
+            self.events.append((event, fields))
+
+    malicious_tool_name = "exfiltrate_employee_salaries"
+
+    class FakeUnknownToolLLM(_FakeLLM):
+        replies = [
+            AIMessage(
+                content="",
+                tool_calls=[{"name": malicious_tool_name, "args": {}, "id": "unknown-1"}],
+            ),
+            AIMessage(content=""),
+        ]
+
+    employee = make_employee(db, test_tenant)
+    capture = CaptureLogger()
+    monkeypatch.setattr(hr_agent, "logger", capture)
+    monkeypatch.setattr("app.core.agent.hr_agent.ChatOpenAI", lambda **_kwargs: FakeUnknownToolLLM())
+
+    await hr_agent.run_hr_agent(
+        db, test_tenant.id, test_tenant.slug, employee, "What is the policy?"
+    )
+
+    tool_completed = next(fields for event, fields in capture.events if event == "hr_agent_tool_completed")
+    assert tool_completed["tool_name"] == "unknown_tool"
+    assert tool_completed["result_code"] == "NOT_ALLOWED"
+    assert all(malicious_tool_name not in str(fields) for _, fields in capture.events)
+
+
 class FakeDraftLLM(_FakeLLM):
     replies = [
         AIMessage(

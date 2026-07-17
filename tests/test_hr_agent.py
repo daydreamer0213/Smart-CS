@@ -89,6 +89,27 @@ class FakeSearchLLM(_FakeLLM):
     ]
 
 
+class FakeNoSourceDraftLLM(_FakeLLM):
+    replies = [
+        AIMessage(
+            content="",
+            tool_calls=[{
+                "name": "search_hr_knowledge",
+                "args": {"query": "cross-border annual leave"},
+                "id": "search-no-source",
+            }],
+        ),
+        AIMessage(
+            content="",
+            tool_calls=[{
+                "name": "draft_handoff",
+                "args": {"reason": "no authorized HR source found"},
+                "id": "draft-no-source",
+            }],
+        ),
+    ]
+
+
 class FakeStatusLLM(_FakeLLM):
     replies = [
         AIMessage(
@@ -121,6 +142,35 @@ async def test_hr_agent_can_prepare_handoff_draft(db, test_tenant, monkeypatch):
     assert draft.status == "pending"
     assert sources == []
     assert db.query(SupportHandoff).filter_by(tenant_id=test_tenant.id).count() == 0
+
+
+async def test_no_source_can_prepare_draft_but_not_handoff(db, test_tenant, monkeypatch):
+    employee = make_employee(db, test_tenant)
+    llm = FakeNoSourceDraftLLM()
+
+    async def fake_search(_args):
+        return json.dumps({"results": []})
+
+    monkeypatch.setattr("app.core.agent.hr_agent.ChatOpenAI", lambda **_kwargs: llm)
+    monkeypatch.setattr(
+        "app.core.agent.hr_agent.search_knowledge",
+        SimpleNamespace(ainvoke=fake_search),
+    )
+
+    question = "How should cross-border annual leave be handled?"
+    _, draft, sources = await run_hr_agent(
+        db, test_tenant.id, test_tenant.slug, employee, question
+    )
+
+    assert draft is not None
+    assert draft.question == question
+    assert draft.reason == "no authorized HR source found"
+    assert sources == []
+    assert db.query(SupportHandoff).filter(
+        SupportHandoff.tenant_id == test_tenant.id,
+        SupportHandoff.requester_user_id == employee.id,
+    ).count() == 0
+    assert llm.calls == 2
 
 
 async def test_hr_agent_returns_clarifying_question_directly(db, test_tenant, monkeypatch):

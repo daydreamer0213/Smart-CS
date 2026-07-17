@@ -1,7 +1,10 @@
 """Security regression tests for the current public API surface."""
 
+import json
+
 from app.core.auth.security import hash_password
 from app.core.auth.token import create_access_token
+from app.models.document import Document, DocumentChunk
 from app.models.user import User
 
 
@@ -59,3 +62,57 @@ async def test_admin_requires_valid_credentials(client, test_tenant):
         headers={"Authorization": "Bearer fake-token"},
     )
     assert response.status_code == 401
+
+
+async def test_search_filters_cross_tenant_document_chunk_ids(db, test_tenant, monkeypatch):
+    from app.core.agent.hr_agent import search_hr_knowledge, set_hr_runtime
+    from app.models.tenant import Tenant
+
+    other_tenant = Tenant(
+        slug="other-document-tenant",
+        name="Other Document Tenant",
+        config_json={},
+        is_active=True,
+    )
+    db.add(other_tenant)
+    db.flush()
+    employee = _user(db, test_tenant, "current-tenant-employee@example.com")
+    document = Document(
+        tenant_id=other_tenant.id,
+        filename="other-tenant-policy.txt",
+        file_type="txt",
+        file_hash="other-tenant-document-hash",
+        status="ready",
+    )
+    db.add(document)
+    db.flush()
+    chunk = DocumentChunk(
+        document_id=document.id,
+        chunk_index=0,
+        content="Only the other tenant may see this policy.",
+        status="active",
+    )
+    db.add(chunk)
+    db.commit()
+
+    class FakeEmbedding:
+        async def embed(self, _texts):
+            return [[0.0]]
+
+    class FakeVectorStore:
+        def search(self, *_args):
+            return [(chunk.id, 0.1)]
+
+    class FakeBm25:
+        def search(self, *_args):
+            return [(chunk.id, 1.0)]
+
+    monkeypatch.setattr("app.core.agent.tools.get_embedding_provider", lambda: FakeEmbedding())
+    monkeypatch.setattr("app.core.agent.tools.get_vector_store", lambda: FakeVectorStore())
+    monkeypatch.setattr("app.core.agent.tools.get_bm25_manager", lambda: FakeBm25())
+
+    set_hr_runtime(db, test_tenant.id, test_tenant.slug, employee, "What is the leave policy?")
+    result = json.loads(await search_hr_knowledge.ainvoke({"query": "leave policy"}))
+
+    assert result["sources"] == []
+    assert result["result_count"] == 0

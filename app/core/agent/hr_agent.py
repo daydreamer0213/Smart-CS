@@ -89,7 +89,7 @@ def _normalize_sources(payload: dict) -> list[dict]:
 
 
 def _has_authorized_citations(reply: str, sources: list[dict]) -> bool:
-    cited_ids = re.findall(r"\[source:([^\]\s]+)\]", reply)
+    cited_ids = re.findall(r"\[source:([^\]]*)\]", reply)
     authorized_ids = {source["source_id"] for source in sources}
     return bool(cited_ids) and all(source_id in authorized_ids for source_id in cited_ids)
 

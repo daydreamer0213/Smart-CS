@@ -94,6 +94,17 @@ def _has_authorized_citations(reply: str, sources: list[dict]) -> bool:
     return bool(cited_ids) and all(source_id in authorized_ids for source_id in cited_ids)
 
 
+def _render_authorized_citations(reply: str, sources: list[dict]) -> str:
+    if not reply.strip() or not sources:
+        return _UNVERIFIED_REPLY
+    if _has_authorized_citations(reply, sources):
+        return reply
+    if re.search(r"\[source:[^\]\s]+\]", reply):
+        return _UNVERIFIED_REPLY
+    citations = " ".join(f"[source:{source['source_id']}]" for source in sources)
+    return f"{reply.rstrip()}\n\n{citations}"
+
+
 def _format_handoff_status(handoffs: list) -> str:
     if not handoffs:
         return "您当前没有 HR 支持请求。"
@@ -251,9 +262,7 @@ async def run_hr_agent(
                 if not ctx["search_attempted"] or ctx["empty_search"]:
                     return _UNVERIFIED_REPLY, None, ctx["sources"]
                 content = str(reply.content or "")
-                if not _has_authorized_citations(content, ctx["sources"]):
-                    return _UNVERIFIED_REPLY, None, ctx["sources"]
-                return content, None, ctx["sources"]
+                return _render_authorized_citations(content, ctx["sources"]), None, ctx["sources"]
 
             for call in reply.tool_calls:
                 tool_calls += 1

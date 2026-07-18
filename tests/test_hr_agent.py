@@ -391,7 +391,8 @@ async def test_hr_agent_normalizes_authorized_search_sources(db, test_tenant, mo
 @pytest.mark.parametrize(
     ("answer", "expected"),
     [
-        ("年假按制度执行。", "我无法在未检索到授权 HR 制度来源的情况下确认该政策。请补充信息或申请 HR 人工支持。"),
+        ("年假按制度执行。", "年假按制度执行。\n\n[source:policy-1]"),
+        ("年假按制度执行。[annual-leave-policy.txt]", "年假按制度执行。[annual-leave-policy.txt]\n\n[source:policy-1]"),
         ("年假按制度执行。[source:other-policy]", "我无法在未检索到授权 HR 制度来源的情况下确认该政策。请补充信息或申请 HR 人工支持。"),
         ("年假按制度执行。[source:policy-1]", "年假按制度执行。[source:policy-1]"),
     ],

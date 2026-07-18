@@ -23,6 +23,24 @@ def test_structured_text_and_markdown_keep_paragraphs_and_section_paths():
     ]
 
 
+def test_markdown_adjacent_nested_headings_keep_following_paragraph_paths():
+    from app.core.parsing.router import parse_structured_file
+
+    document = parse_structured_file(
+        "policy.md",
+        b"# Handbook\nIntroduction without a blank line.\n## Leave\nTen days.\n### Exceptions\nManager approval required.",
+    )
+
+    assert [(element.element_type, element.text, element.section_path) for element in document.elements] == [
+        ("heading", "Handbook", ["Handbook"]),
+        ("paragraph", "Introduction without a blank line.", ["Handbook"]),
+        ("heading", "Leave", ["Handbook", "Leave"]),
+        ("paragraph", "Ten days.", ["Handbook", "Leave"]),
+        ("heading", "Exceptions", ["Handbook", "Leave", "Exceptions"]),
+        ("paragraph", "Manager approval required.", ["Handbook", "Leave", "Exceptions"]),
+    ]
+
+
 def test_structured_docx_preserves_body_order_headings_and_table_markdown():
     from app.core.parsing.router import parse_structured_file
 
@@ -73,3 +91,19 @@ def test_structured_xlsx_keeps_each_non_empty_sheet_full_table_and_row_bounds():
     assert all(element.element_type == "table" for element in document.elements)
     assert "| Department | Email | Region |" in document.elements[0].table_markdown
     assert "| Shanghai | HRBP | 20 |" in document.elements[1].table_markdown
+
+
+def test_structured_xlsx_preserves_formula_text_without_cached_value():
+    from app.core.parsing.router import parse_structured_file
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Totals"
+    worksheet.append(["Amount", "Total"])
+    worksheet.append([10, "=SUM(A2:A2)"])
+    data = io.BytesIO()
+    workbook.save(data)
+
+    document = parse_structured_file("totals.xlsx", data.getvalue())
+
+    assert "=SUM(A2:A2)" in document.elements[0].table_markdown

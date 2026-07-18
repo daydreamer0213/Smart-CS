@@ -25,22 +25,35 @@ def _markdown_table(rows: list[list[object | None]]) -> str:
 def _text_elements(text: str, markdown: bool) -> list[ParsedElement]:
     elements: list[ParsedElement] = []
     section_path: list[str] = []
-    for block in re.split(r"\n\s*\n", text.strip()):
-        block = block.strip()
-        if not block:
-            continue
-        heading = re.fullmatch(r"(#{1,6})\s+(.+?)\s*#*", block) if markdown else None
+    paragraph_lines: list[str] = []
+
+    def add_paragraph():
+        if paragraph_lines:
+            elements.append(
+                ParsedElement(
+                    text="\n".join(paragraph_lines),
+                    element_type="paragraph",
+                    section_path=section_path.copy(),
+                )
+            )
+            paragraph_lines.clear()
+
+    for line in text.splitlines():
+        line = line.strip()
+        heading = re.fullmatch(r"(#{1,6})\s+(.+?)\s*#*", line) if markdown else None
         if heading:
+            add_paragraph()
             level = len(heading.group(1))
             title = heading.group(2).strip()
             section_path = section_path[: level - 1] + [title]
             elements.append(
                 ParsedElement(text=title, element_type="heading", section_path=section_path.copy())
             )
+        elif line:
+            paragraph_lines.append(line)
         else:
-            elements.append(
-                ParsedElement(text=block, element_type="paragraph", section_path=section_path.copy())
-            )
+            add_paragraph()
+    add_paragraph()
     return elements
 
 
@@ -113,7 +126,7 @@ def parse_docx_document(data: bytes) -> ParsedDocument:
 def parse_xlsx_document(data: bytes) -> ParsedDocument:
     from openpyxl import load_workbook
 
-    workbook = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    workbook = load_workbook(io.BytesIO(data), read_only=True, data_only=False)
     try:
         elements = []
         for worksheet in workbook.worksheets:

@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-18
 
-**Status:** Proposed for user review
+**Status:** Approved; M2-1 delivered, M2-2 authorized on 2026-07-18
 
 ## Goal
 
@@ -258,6 +258,13 @@ API and retrieval behavior.
 Benchmark Docling on the fixture corpus, configure all model artifacts on
 `D:`, then add automatic routing and OCR/table extraction. Keep Docling an
 optional document-processing dependency rather than a project-wide framework.
+
+For the approved Windows CPU implementation, use Tesseract CLI with explicit
+`chi_sim` and `eng` languages as the default OCR backend. Keep OCR backend
+selection deterministic: do not use Docling's automatic OCR selection and do
+not silently switch backends after a failure. Store pip, Hugging Face, Torch,
+Docling, and Tesseract artifacts under configured `D:\DevData` paths before
+installing or downloading dependencies.
 
 ### Stage 3: Metadata and Structural Chunking
 

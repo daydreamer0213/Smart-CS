@@ -24,6 +24,8 @@ from app.core.retrieval_module import (
 from app.core.retrieval.fusion import rrf_fusion
 
 MAX_VECTOR_DISTANCE = 0.5
+RETRIEVAL_CANDIDATE_LIMIT = 20
+MAX_VISIBLE_RESULTS = 5
 
 # Runtime context — set before each graph invocation
 _runtime: ContextVar[dict] = ContextVar("agent_runtime", default={})
@@ -75,12 +77,16 @@ async def search_knowledge(query: str) -> str:
         # Run vector and BM25 searches in parallel — they are independent
         loop = asyncio.get_running_loop()
         vector_results, bm25_results = await asyncio.gather(
-            loop.run_in_executor(None, vs.search, tenant_slug, query_vec, 5),
-            loop.run_in_executor(None, bm.search, tenant_slug, query, 5),
+            loop.run_in_executor(
+                None, vs.search, tenant_slug, query_vec, RETRIEVAL_CANDIDATE_LIMIT
+            ),
+            loop.run_in_executor(
+                None, bm.search, tenant_slug, query, RETRIEVAL_CANDIDATE_LIMIT
+            ),
         )
 
         vector_results = [result for result in vector_results if result[1] <= MAX_VECTOR_DISTANCE]
-        fused = rrf_fusion(vector_results, bm25_results, top_k=5)
+        fused = rrf_fusion(vector_results, bm25_results, top_k=RETRIEVAL_CANDIDATE_LIMIT)
 
         if not fused:
             return json.dumps({"status": "NO_RESULTS", "results": []})
@@ -132,6 +138,8 @@ async def search_knowledge(query: str) -> str:
                     "score": round(r["score"], 4),
                     "retrievers": r["sources"],
                 })
+                if len(results) == MAX_VISIBLE_RESULTS:
+                    break
                 continue
             chunk_entry = chunk_map.get(r["doc_id"])
             if chunk_entry is None:
@@ -149,6 +157,8 @@ async def search_knowledge(query: str) -> str:
                 "score": round(r["score"], 4),
                 "retrievers": r["sources"],
             })
+            if len(results) == MAX_VISIBLE_RESULTS:
+                break
 
         status = "OK" if results else "NO_RESULTS"
         return json.dumps({"status": status, "results": results}, ensure_ascii=False)

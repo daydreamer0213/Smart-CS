@@ -30,7 +30,7 @@
 - `ParsedDocument.plain_text` returns non-empty element text joined by double newlines.
 - `DocumentParser.parse(filename: str, data: bytes) -> ParsedDocument` is the interface consumed by M2-2 parser routes.
 
-- [ ] **Step 1: Write failing contract tests**
+- [x] **Step 1: Write failing contract tests**
 
 ```python
 import pytest
@@ -115,7 +115,7 @@ def test_knowledge_chunk_keeps_display_and_embedding_content_separate():
     assert chunk.source_element_indexes == [3]
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run:
 
@@ -125,7 +125,7 @@ Run:
 
 Expected: collection fails with `ModuleNotFoundError: No module named 'app.core.parsing.contracts'`.
 
-- [ ] **Step 3: Implement the minimum contracts**
+- [x] **Step 3: Implement the minimum contracts**
 
 ```python
 from typing import Literal, Protocol, runtime_checkable
@@ -214,7 +214,7 @@ class DocumentParser(Protocol):
     def parse(self, filename: str, data: bytes) -> ParsedDocument: ...
 ```
 
-- [ ] **Step 4: Run contract tests and existing document tests**
+- [x] **Step 4: Run contract tests and existing document tests**
 
 Run:
 
@@ -224,7 +224,7 @@ Run:
 
 Expected: all selected tests pass.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```powershell
 git add -- app/core/parsing/contracts.py tests/test_parsing_contracts.py
@@ -254,7 +254,7 @@ git commit -m "feat: define structured document contracts"
 - Each fixture entry provides `id`, `filename`, `format`, `category`, `expected_baseline_status`, `required_facts`, and optional `expected_page_count`.
 - `generate_fixtures.py` regenerates the same small files without network access.
 
-- [ ] **Step 1: Write the failing fixture inventory test**
+- [x] **Step 1: Write the failing fixture inventory test**
 
 ```python
 import json
@@ -283,7 +283,7 @@ def test_document_fixture_manifest_covers_enterprise_shapes():
     assert all(entry["required_facts"] for entry in entries if entry["category"] != "encrypted")
 ```
 
-- [ ] **Step 2: Run the inventory test and verify RED**
+- [x] **Step 2: Run the inventory test and verify RED**
 
 Run:
 
@@ -293,7 +293,7 @@ Run:
 
 Expected: failure because `manifest.json` does not exist.
 
-- [ ] **Step 3: Add the manifest and deterministic generator**
+- [x] **Step 3: Add the manifest and deterministic generator**
 
 The generator uses only installed libraries and fixed synthetic content:
 
@@ -479,7 +479,7 @@ if __name__ == "__main__":
 }
 ```
 
-- [ ] **Step 4: Generate fixtures and run inventory test GREEN**
+- [x] **Step 4: Generate fixtures and run inventory test GREEN**
 
 Run:
 
@@ -490,7 +490,7 @@ Run:
 
 Expected: fixture generation exits 0 and the inventory test passes.
 
-- [ ] **Step 5: Regenerate and verify semantic determinism**
+- [x] **Step 5: Regenerate and verify semantic determinism**
 
 Run the generator a second time, rerun the inventory test, and inspect Git for
 unexpected source changes. ZIP and PDF container metadata are not used as an
@@ -506,7 +506,7 @@ Expected: the inventory test passes and exactly nine generated document files
 remain present. The benchmark tests, not binary hashes, verify their stable
 semantic content.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 ```powershell
 git add -- tests/fixtures/documents tests/test_document_fixtures.py
@@ -527,7 +527,7 @@ git commit -m "test: add synthetic HR document corpus"
 - Summary records total, parsed, errors, required facts, found facts, and aggregate fact recall.
 - CLI accepts `--fixture-dir` and optional `--output`; without `--output` it prints JSON to stdout.
 
-- [ ] **Step 1: Write failing benchmark tests**
+- [x] **Step 1: Write failing benchmark tests**
 
 ```python
 import json
@@ -567,7 +567,7 @@ def test_benchmark_cli_writes_json(tmp_path):
     assert payload["summary"]["total"] == 9
 ```
 
-- [ ] **Step 2: Run benchmark tests and verify RED**
+- [x] **Step 2: Run benchmark tests and verify RED**
 
 Run:
 
@@ -577,7 +577,7 @@ Run:
 
 Expected: import fails because `scripts.benchmark_document_ingestion` does not exist.
 
-- [ ] **Step 3: Implement the minimum benchmark**
+- [x] **Step 3: Implement the minimum benchmark**
 
 ```python
 import argparse
@@ -689,7 +689,7 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 4: Run benchmark tests GREEN**
+- [x] **Step 4: Run benchmark tests GREEN**
 
 Run:
 
@@ -699,7 +699,7 @@ Run:
 
 Expected: both tests pass without network access.
 
-- [ ] **Step 5: Run the actual baseline and inspect the report**
+- [x] **Step 5: Run the actual baseline and inspect the report**
 
 Run:
 
@@ -710,7 +710,7 @@ Get-Content 'D:\DevData\smartcs\benchmarks\m2-1-baseline.json'
 
 Expected: nine per-fixture results; clean text is parsed, scanned and encrypted PDFs are errors, and the mixed PDF records at least one missing fact. The report contains no credentials or user data.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 ```powershell
 git add -- scripts/benchmark_document_ingestion.py tests/test_document_benchmark.py
@@ -730,7 +730,7 @@ git commit -m "feat: add document ingestion baseline benchmark"
 - The runbook gives the exact Conda command and `D:\DevData` output path.
 - Roadmap records M2-1 as delivered without marking the whole Milestone 2 complete.
 
-- [ ] **Step 1: Write the benchmark runbook**
+- [x] **Step 1: Write the benchmark runbook**
 
 The runbook must explain:
 
@@ -756,7 +756,7 @@ New-Item -ItemType Directory -Force 'D:\DevData\smartcs\benchmarks' | Out-Null
 - Do not commit local reports or anonymized company documents.
 ```
 
-- [ ] **Step 2: Run focused verification**
+- [x] **Step 2: Run focused verification**
 
 Run:
 
@@ -776,7 +776,7 @@ Run:
 
 Expected: zero failures.
 
-- [ ] **Step 4: Run repository checks**
+- [x] **Step 4: Run repository checks**
 
 Run:
 
@@ -787,7 +787,7 @@ git status --short
 
 Expected: no whitespace errors; only M2-1 files plus the pre-existing untracked `docs/superpowers/plans/2026-07-17-smartcs-hr-agent-foundation.md` appear before the final commit.
 
-- [ ] **Step 5: Request correctness review and address findings**
+- [x] **Step 5: Request correctness review and address findings**
 
 Review the complete M2-1 diff against:
 
@@ -800,14 +800,14 @@ Review the complete M2-1 diff against:
 
 Fix every critical or important finding with a failing regression test before implementation changes.
 
-- [ ] **Step 6: Update roadmap and commit Task 4**
+- [x] **Step 6: Update roadmap and commit Task 4**
 
 ```powershell
 git add -- docs/operations/document-ingestion-benchmark.md docs/planning/ROADMAP.md docs/superpowers/plans/2026-07-18-m2-1-contracts-fixtures-benchmark.md
 git commit -m "docs: record M2-1 document baseline"
 ```
 
-- [ ] **Step 7: Produce the M2-1 checkpoint report and stop**
+- [x] **Step 7: Produce the M2-1 checkpoint report and stop**
 
 Report:
 

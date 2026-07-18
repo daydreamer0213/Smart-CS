@@ -12,3 +12,4 @@ build/
 migrations/__pycache__/
 logs/
 .idea/
+.worktrees/

@@ -13,7 +13,7 @@ From the repository root, run:
 
 ```powershell
 New-Item -ItemType Directory -Force 'D:\DevData\smartcs\benchmarks' | Out-Null
-& 'D:\2026.07.09\conda-envs\smart-cs\python.exe' scripts/benchmark_document_ingestion.py --fixture-dir tests/fixtures/documents --output 'D:\DevData\smartcs\benchmarks\m2-1-baseline.json'
+& 'D:\2026.07.09\conda-envs\smart-cs\python.exe' scripts/benchmark_document_ingestion.py --fixture-dir tests/fixtures/documents --output 'D:\DevData\smartcs\benchmarks\m2-1-baseline.json' --environment-label local-cpu
 ```
 
 The JSON report stays under `D:\DevData\smartcs\benchmarks`; it is local
@@ -37,6 +37,22 @@ generated output and must not be committed.
   result does not establish preserved table structure or reliable reading order.
 - These scanned, encrypted, mixed, table, and multi-column outcomes define the
   gaps M2-2 must improve.
+
+## Run Context
+
+`run_context` makes local reports comparable without recording secrets. It
+contains the environment label, manifest schema and SHA-256, best-effort Git
+revision, Python implementation/version, OS platform fields, PyMuPDF,
+python-docx and openpyxl versions, and `CHUNK_SIZE`, `CHUNK_OVERLAP`, and
+`MAX_CHUNK_SIZE`.
+
+Use a short non-sensitive `--environment-label` such as `local-cpu`. The
+default is `local-unspecified`. The report never includes environment
+variables, credentials, host usernames, or an absolute working directory.
+
+Each fixture result includes raw-text and chunk-level exact-fact fields. The
+chunk fields contain only synthetic facts declared by the manifest; complete
+chunk text is not written to the report.
 
 ## Data Handling
 

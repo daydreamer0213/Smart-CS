@@ -14,6 +14,8 @@ REQUIRED_ENTRY_FIELDS = {
     "format",
     "category",
     "expected_baseline_status",
+    "expected_chunk_count",
+    "expected_missing_facts",
     "required_facts",
 }
 
@@ -78,6 +80,106 @@ def test_text_pdf_fixtures_expose_all_required_facts():
         text = "".join(page.get_text() for page in document)
         assert all(fact in text for fact in entry["required_facts"])
         document.close()
+
+
+def test_repeated_header_and_numbered_footer_are_positioned_on_every_page():
+    entry = next(
+        entry
+        for entry in load_manifest()["fixtures"]
+        if entry["category"] == "repeated_header_footer"
+    )
+    document = fitz.open(FIXTURE_DIR / entry["filename"])
+
+    for page_number, page in enumerate(document, start=1):
+        headers = page.search_for("北辰科技人力资源制度")
+        footers = page.search_for(f"第 {page_number} 页")
+        assert len(headers) == 1
+        assert len(footers) == 1
+        assert headers[0].y1 < page.rect.height * 0.1
+        assert footers[0].y0 > page.rect.height * 0.9
+
+    document.close()
+
+
+def test_leave_table_contains_all_rows_inside_a_drawn_grid():
+    entry = next(
+        entry for entry in load_manifest()["fixtures"] if entry["category"] == "table"
+    )
+    document = fitz.open(FIXTURE_DIR / entry["filename"])
+    page = document[0]
+    rows = [
+        ("工龄", "年假天数"),
+        ("0-9年", "5天"),
+        ("10-19年", "10天"),
+        ("20年以上", "15天"),
+    ]
+    word_rects = {
+        word[4]: fitz.Rect(word[:4])
+        for word in page.get_text("words")
+        if 110 < word[1] < 270
+    }
+
+    row_rects = []
+    for left_text, right_text in rows:
+        left = word_rects[left_text]
+        right = word_rects[right_text]
+        assert left.x1 < right.x0
+        assert left.y0 == pytest.approx(right.y0, abs=1)
+        row_rects.append((left, right))
+
+    assert [left.y0 for left, _ in row_rects] == sorted(
+        left.y0 for left, _ in row_rects
+    )
+
+    lines = [
+        item[1:]
+        for drawing in page.get_drawings()
+        for item in drawing["items"]
+        if item[0] == "l"
+    ]
+    vertical = sorted(
+        (start.x, start.y, end.y)
+        for start, end in lines
+        if start.x == pytest.approx(end.x)
+    )
+    horizontal = sorted(
+        (start.y, start.x, end.x)
+        for start, end in lines
+        if start.y == pytest.approx(end.y)
+    )
+    assert vertical == pytest.approx(
+        [(72, 110, 270), (250, 110, 270), (430, 110, 270)]
+    )
+    assert horizontal == pytest.approx(
+        [
+            (110, 72, 430),
+            (150, 72, 430),
+            (190, 72, 430),
+            (230, 72, 430),
+            (270, 72, 430),
+        ]
+    )
+    assert all(72 < left.x0 < 250 < right.x0 < 430 for left, right in row_rects)
+    assert all(110 < left.y0 < 270 for left, _ in row_rects)
+    document.close()
+
+
+def test_two_column_facts_are_drawn_on_opposite_page_halves():
+    entry = next(
+        entry
+        for entry in load_manifest()["fixtures"]
+        if entry["category"] == "two_column"
+    )
+    document = fitz.open(FIXTURE_DIR / entry["filename"])
+    page = document[0]
+    left = page.search_for("新员工应在首日完成身份核验。")
+    right = page.search_for("离职员工应在三天内归还设备。")
+
+    assert len(left) == len(right) == 1
+    assert left[0].x1 < page.rect.width / 2
+    assert right[0].x0 > page.rect.width / 2
+    assert left[0].y0 == pytest.approx(right[0].y0, abs=1)
+    document.close()
 
 
 def test_scanned_and_mixed_pdf_page_layers_match_their_baselines():

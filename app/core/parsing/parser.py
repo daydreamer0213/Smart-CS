@@ -90,3 +90,10 @@ def parse_file(filename: str, data: bytes) -> str:
     if ext not in _PARSERS:
         raise ValueError(f"Unsupported file type: .{ext}")
     return _PARSERS[ext](data)
+
+
+def parse_structured_file(filename: str, data: bytes):
+    """Parse into structured elements without changing the legacy text API."""
+    from app.core.parsing.router import parse_structured_file as _parse_structured_file
+
+    return _parse_structured_file(filename, data)

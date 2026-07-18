@@ -51,6 +51,7 @@ class ParsedDocument(BaseModel):
     page_count: int = Field(ge=0)
     elements: list[ParsedElement]
     quality: ParseQuality = Field(default_factory=ParseQuality)
+    metadata: dict[str, MetadataScalar] = Field(default_factory=dict)
 
     @property
     def plain_text(self) -> str:

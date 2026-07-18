@@ -32,6 +32,16 @@ def _handoff_response(handoff: SupportHandoff) -> HandoffResponse:
     )
 
 
+def _handoff_audit_state(handoff: SupportHandoff) -> dict:
+    return {
+        "id": handoff.id,
+        "status": handoff.status,
+        "assigned_user_id": handoff.assigned_user_id,
+        "resolved_by_user_id": handoff.resolved_by_user_id,
+        "resolved_at": handoff.resolved_at.isoformat() if handoff.resolved_at else None,
+    }
+
+
 def _expired(expires_at: datetime) -> bool:
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=UTC)
@@ -129,15 +139,14 @@ def confirm_handoff_draft(
     )
     db.add(handoff)
     db.flush()
-    result = _handoff_response(handoff).model_dump(mode="json")
     db.add(AuditLog(
         tenant_id=tenant_id,
         actor_user_id=requester_user_id,
         action="confirm_handoff",
         entity_type="hr_support_handoff",
         entity_id=handoff.id,
-        after_json=result,
-        result_json=result,
+        after_json=_handoff_audit_state(handoff),
+        result_json={"id": handoff.id},
         status="success",
         idempotency_key=key,
     ))
@@ -202,7 +211,7 @@ def update_handoff_status(
             raise HRSupportError(422, "ASSIGNEE_INVALID", "被指派人必须是当前租户的活跃用户")
         if handoff.status != "open":
             raise HRSupportError(409, "HANDOFF_STATUS_INVALID", "仅 open 请求可被指派")
-        before = _handoff_response(handoff).model_dump(mode="json")
+        before = _handoff_audit_state(handoff)
         handoff.assigned_user_id = assignee.id
         handoff.status = "assigned"
         action = "assign_handoff"
@@ -211,7 +220,7 @@ def update_handoff_status(
             raise HRSupportError(409, "HANDOFF_STATUS_INVALID", "仅 open 或 assigned 请求可被解决")
         if not (resolution_note or "").strip():
             raise HRSupportError(422, "RESOLUTION_NOTE_REQUIRED", "解决请求必须填写处理说明")
-        before = _handoff_response(handoff).model_dump(mode="json")
+        before = _handoff_audit_state(handoff)
         handoff.status = "resolved"
         handoff.resolved_by_user_id = actor_user_id
         handoff.resolution_note = resolution_note.strip()
@@ -221,7 +230,7 @@ def update_handoff_status(
         raise HRSupportError(409, "HANDOFF_STATUS_INVALID", "不支持该状态变更")
 
     db.flush()
-    after = _handoff_response(handoff).model_dump(mode="json")
+    after = _handoff_audit_state(handoff)
     db.add(AuditLog(
         tenant_id=tenant_id,
         actor_user_id=actor_user_id,
@@ -230,7 +239,7 @@ def update_handoff_status(
         entity_id=handoff.id,
         before_json=before,
         after_json=after,
-        result_json=after,
+        result_json={"id": handoff.id},
         status="success",
     ))
     db.commit()

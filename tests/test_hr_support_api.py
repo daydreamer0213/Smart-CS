@@ -1,5 +1,6 @@
 """HTTP contract tests for the governed HR support handoff lifecycle."""
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -11,6 +12,18 @@ from app.models.hr import HandoffDraft, SupportHandoff
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.services import hr_support_service
+
+SECRET_QUESTION = "SECRET_QUESTION_cross_region_leave"
+SECRET_REASON = "SECRET_REASON_policy_exception"
+SECRET_EXCERPT = "SECRET_EXCERPT_internal_policy_text"
+SECRET_RESOLUTION_NOTE = "SECRET_RESOLUTION_NOTE_local_exception_confirmed"
+OPERATIONAL_AUDIT_KEYS = {
+    "id",
+    "status",
+    "assigned_user_id",
+    "resolved_by_user_id",
+    "resolved_at",
+}
 
 
 def _user(db, tenant, role, email=None, active=True):
@@ -32,9 +45,17 @@ def _draft(db, tenant, requester, *, expires_at=None):
     draft = HandoffDraft(
         tenant_id=tenant.id,
         requester_user_id=requester.id,
-        question="How is cross-region leave handled?",
-        reason="The policy source does not cover this exception.",
-        sources_json=[{"source_type": "document", "source_id": "policy-1", "title": "Leave policy", "excerpt": "Standard leave rules", "score": 0.93}],
+        question=SECRET_QUESTION,
+        reason=SECRET_REASON,
+        sources_json=[
+            {
+                "source_type": "document",
+                "source_id": "policy-1",
+                "title": "Leave policy",
+                "excerpt": SECRET_EXCERPT,
+                "score": 0.93,
+            }
+        ],
         expires_at=expires_at or datetime.now(UTC) + timedelta(minutes=10),
     )
     db.add(draft)
@@ -58,6 +79,9 @@ async def test_employee_confirms_own_pending_draft_and_audit_is_recorded(client,
 
     assert response.status_code == 200
     assert response.json()["status"] == "open"
+    assert response.json()["question"] == SECRET_QUESTION
+    assert response.json()["reason"] == SECRET_REASON
+    assert response.json()["sources"][0]["excerpt"] == SECRET_EXCERPT
     handoff = db.query(SupportHandoff).filter_by(tenant_id=test_tenant.id).one()
     assert handoff.requester_user_id == employee.id
     db.expire_all()
@@ -67,8 +91,22 @@ async def test_employee_confirms_own_pending_draft_and_audit_is_recorded(client,
     assert audit.entity_type == "hr_support_handoff"
     assert audit.entity_id == handoff.id
     assert audit.status == "success"
-    assert audit.result_json["id"] == handoff.id
+    assert audit.after_json == {
+        "id": handoff.id,
+        "status": "open",
+        "assigned_user_id": None,
+        "resolved_by_user_id": None,
+        "resolved_at": None,
+    }
+    assert audit.result_json == {"id": handoff.id}
     assert audit.idempotency_key == f"hr-handoff:{draft.id}:confirm-own-0001"
+    audit_json = json.dumps(
+        [audit.before_json, audit.after_json, audit.result_json], ensure_ascii=False
+    )
+    assert all(
+        secret not in audit_json
+        for secret in (SECRET_QUESTION, SECRET_REASON, SECRET_EXCERPT)
+    )
 
 
 async def test_confirmation_replay_returns_same_handoff_and_no_duplicate(client, db, test_tenant):
@@ -214,7 +252,7 @@ async def test_admin_can_assign_and_resolve_only_active_tenant_users_with_audit(
     resolved = await client.patch(
         f"/api/v1/{test_tenant.slug}/hr-support/admin/{handoff_id}",
         headers=_headers(owner),
-        json={"status": "resolved", "resolution_note": "HR confirmed the local exception policy."},
+        json={"status": "resolved", "resolution_note": SECRET_RESOLUTION_NOTE},
     )
 
     assert invalid.status_code == 422
@@ -224,9 +262,35 @@ async def test_admin_can_assign_and_resolve_only_active_tenant_users_with_audit(
     assert resolved.status_code == 200
     assert resolved.json()["status"] == "resolved"
     assert resolved.json()["resolved_by_user_id"] == owner.id
-    actions = [row.action for row in db.query(AuditLog).filter_by(tenant_id=test_tenant.id).all()]
+    assert resolved.json()["resolution_note"] == SECRET_RESOLUTION_NOTE
+    handoff = db.query(SupportHandoff).filter_by(id=handoff_id).one()
+    assert handoff.question == SECRET_QUESTION
+    assert handoff.reason == SECRET_REASON
+    assert handoff.sources_json[0]["excerpt"] == SECRET_EXCERPT
+    assert handoff.resolution_note == SECRET_RESOLUTION_NOTE
+    audits = db.query(AuditLog).filter_by(tenant_id=test_tenant.id).all()
+    actions = [row.action for row in audits]
     assert actions.count("assign_handoff") == 1
     assert actions.count("resolve_handoff") == 1
+    lifecycle_audits = {
+        row.action: row for row in audits if row.action in {"assign_handoff", "resolve_handoff"}
+    }
+    for audit in lifecycle_audits.values():
+        assert set(audit.before_json) == OPERATIONAL_AUDIT_KEYS
+        assert set(audit.after_json) == OPERATIONAL_AUDIT_KEYS
+        assert audit.result_json == {"id": handoff_id}
+    assert lifecycle_audits["assign_handoff"].before_json["status"] == "open"
+    assert lifecycle_audits["assign_handoff"].after_json["status"] == "assigned"
+    assert lifecycle_audits["resolve_handoff"].before_json["status"] == "assigned"
+    assert lifecycle_audits["resolve_handoff"].after_json["status"] == "resolved"
+    audit_json = json.dumps(
+        [[row.before_json, row.after_json, row.result_json] for row in audits],
+        ensure_ascii=False,
+    )
+    assert all(
+        secret not in audit_json
+        for secret in (SECRET_QUESTION, SECRET_REASON, SECRET_EXCERPT, SECRET_RESOLUTION_NOTE)
+    )
 
 
 async def test_expired_draft_cannot_create_handoff(client, db, test_tenant):

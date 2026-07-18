@@ -103,6 +103,27 @@ def test_one_substantial_block_per_column_routes_advanced():
     assert decision.reason.value == "multi_column_layout"
 
 
+def test_narrow_gutter_columns_route_advanced():
+    from app.core.parsing.router import inspect_pdf
+
+    def draw(page):
+        page.insert_textbox(
+            fitz.Rect(50, 150, 280, 360),
+            "Left narrow gutter policy text. " * 10,
+            fontsize=11,
+        )
+        page.insert_textbox(
+            fitz.Rect(300, 160, 550, 370),
+            "Right narrow gutter policy text. " * 10,
+            fontsize=11,
+        )
+
+    decision = inspect_pdf(_pdf_bytes(draw))
+
+    assert decision.route.value == "advanced"
+    assert decision.reason.value == "multi_column_layout"
+
+
 def test_full_width_heading_and_body_do_not_route_as_two_columns():
     from app.core.parsing.router import inspect_pdf
 
@@ -119,7 +140,7 @@ def test_full_width_heading_and_body_do_not_route_as_two_columns():
     assert decision.route.value == "native"
 
 
-def test_large_image_region_with_machine_text_routes_advanced():
+def test_embedded_image_with_machine_text_routes_advanced():
     from app.core.parsing.router import inspect_pdf
 
     def draw(page):
@@ -133,10 +154,10 @@ def test_large_image_region_with_machine_text_routes_advanced():
     decision = inspect_pdf(_pdf_bytes(draw))
 
     assert decision.route.value == "advanced"
-    assert decision.reason.value == "large_image_region"
+    assert decision.reason.value == "embedded_image"
 
 
-def test_small_logo_on_clean_text_page_stays_native():
+def test_small_logo_on_clean_text_page_routes_advanced():
     from app.core.parsing.router import inspect_pdf
 
     def draw(page):
@@ -149,7 +170,8 @@ def test_small_logo_on_clean_text_page_stays_native():
 
     decision = inspect_pdf(_pdf_bytes(draw))
 
-    assert decision.route.value == "native"
+    assert decision.route.value == "advanced"
+    assert decision.reason.value == "embedded_image"
 
 
 def test_zero_page_pdf_is_rejected_with_a_controlled_reason():

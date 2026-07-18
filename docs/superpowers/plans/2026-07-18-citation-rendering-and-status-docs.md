@@ -105,7 +105,7 @@ rg -n "JWT.*(pending|待实现)|Phase 1.2.*(active|pending)|74 项现有测试" 
 
 Expected: no matches.
 
-- [ ] **Step 4: Commit documentation alignment**
+- [x] **Step 4: Commit documentation alignment**
 
 ```powershell
 git add docs/planning/ROADMAP.md docs/planning/MILESTONE.md docs/superpowers/plans/2026-07-18-citation-rendering-and-status-docs.md
@@ -121,7 +121,7 @@ git commit -m "docs: align HR agent delivery status"
 - Consumes: the configured Qwen chat and embedding endpoints plus a new temporary SQLite/Chroma directory.
 - Produces: a passing test suite and a live lifecycle demo that exits with code `0`.
 
-- [ ] **Step 1: Run the full regression suite**
+- [x] **Step 1: Run the full regression suite**
 
 ```powershell
 & D:\2026.07.09\conda-envs\smart-cs\python.exe -m pytest tests -q
@@ -129,7 +129,7 @@ git commit -m "docs: align HR agent delivery status"
 
 Expected: all tests pass; the only accepted warning is the known third-party `jieba` / `pkg_resources` deprecation warning.
 
-- [ ] **Step 2: Run an isolated live demo**
+- [x] **Step 2: Run an isolated live demo**
 
 Create a timestamped directory under `D:\DevData\smartcs-demo`, run `alembic upgrade head`, start Uvicorn on an unused local port, run `scripts/demo_enterprise_flow.py` with `SMARTCS_BASE_URL` set to that port, and stop the server afterwards.
 

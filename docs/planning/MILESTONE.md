@@ -19,8 +19,8 @@
 
 ## Scope Boundary
 
-本里程碑不包含 SSO/SCIM、真实 HRIS 或工单系统适配、通知 SLA、生产级 tracing/metrics、CI/CD 和生产密钥治理；这些属于生产化加固阶段。
+本里程碑不包含高级文档解析与知识治理、真实 HRIS/OA 工具适配、SSO/SCIM、通知 SLA、生产级 tracing/metrics、CI/CD 和生产密钥治理；这些分别由后续 Milestone 2-4 承担。
 
 ## Next Milestone
 
-Milestone 2 聚焦真实企业系统接入与生产运维能力。WebSocket 和 Milvus 仅在实际规模需求出现后评估，不作为当前项目的伪需求。
+Milestone 2 聚焦文档智能与知识治理，先补足复杂 PDF/OCR、结构元数据、版本有效期、质量门禁和可量化 RAG 评测。Milestone 3 再接入一个真实 HR/OA 工具平台，Milestone 4 完成异步处理、可靠性、可观测、通知 SLA 和企业身份等生产化加固。WebSocket 和 Milvus 仅在实际规模需求出现后评估，不作为当前项目的伪需求。

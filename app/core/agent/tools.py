@@ -58,12 +58,14 @@ async def search_knowledge(query: str) -> str:
     在回答任何用户问题前必须先调用此工具。传入用户的原始问题作为 query，
     返回 JSON 格式的匹配结果列表（可能为空）。
     """
-    ctx = _runtime.get()
-    tenant_slug = ctx["tenant_slug"]
-    tenant_id = ctx.get("tenant_id")
-    db_session = ctx["db_session"]
-
     try:
+        ctx = _runtime.get()
+        tenant_slug = ctx.get("tenant_slug")
+        tenant_id = ctx.get("tenant_id")
+        db_session = ctx.get("db_session")
+        if not tenant_slug or not tenant_id or db_session is None:
+            return json.dumps({"status": "UNAVAILABLE", "results": []})
+
         vs = get_vector_store()
         bm = get_bm25_manager()
         emb = get_embedding_provider()
@@ -81,13 +83,10 @@ async def search_knowledge(query: str) -> str:
         fused = rrf_fusion(vector_results, bm25_results, top_k=5)
 
         if not fused:
-            return json.dumps({"results": [], "message": "未找到相关知识条目"}, ensure_ascii=False)
+            return json.dumps({"status": "NO_RESULTS", "results": []})
 
         from app.models.document import Document, DocumentChunk
         from app.models.knowledge import KnowledgeItem
-
-        if not tenant_id:
-            return json.dumps({"results": [], "message": "Missing tenant context"}, ensure_ascii=False)
 
         doc_ids = [r["doc_id"] for r in fused]
         knowledge_items = (
@@ -151,9 +150,10 @@ async def search_knowledge(query: str) -> str:
                 "retrievers": r["sources"],
             })
 
-        return json.dumps({"results": results}, ensure_ascii=False)
+        status = "OK" if results else "NO_RESULTS"
+        return json.dumps({"status": status, "results": results}, ensure_ascii=False)
     except Exception:
-        return json.dumps({"results": [], "message": "检索服务暂时不可用，请稍后重试"}, ensure_ascii=False)
+        return json.dumps({"status": "UNAVAILABLE", "results": []})
 
 
 @tool

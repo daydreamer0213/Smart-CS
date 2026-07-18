@@ -29,6 +29,7 @@ HR_SKILL_NAMES = [
 _runtime: ContextVar[dict] = ContextVar("hr_agent_runtime", default={})
 
 _UNVERIFIED_REPLY = "我无法在未检索到授权 HR 制度来源的情况下确认该政策。请补充信息或申请 HR 人工支持。"
+_UNAVAILABLE_REPLY = "HR 知识检索服务暂时不可用，请稍后重试。"
 _PENDING_HANDOFF_REPLY = "已准备待用户确认的 HR 支持请求，确认后才会创建正式工单。"
 _CLARIFYING_QUESTIONS = {
     "leave_type": "请说明您想咨询的是年假、病假还是其他假期？",
@@ -54,6 +55,7 @@ def set_hr_runtime(db: Session, tenant_id: str, tenant_slug: str, user: User, me
         "clarifying_question": None,
         "draft": None,
         "search_attempted": False,
+        "search_status": None,
         "empty_search": False,
         "status_reply": None,
     })
@@ -120,13 +122,31 @@ async def search_hr_knowledge(query: str) -> str:
     ctx["search_attempted"] = True
     try:
         payload = json.loads(await search_knowledge.ainvoke({"query": query}))
+        if not isinstance(payload, dict):
+            raise ValueError("retrieval payload must be an object")
+        results = payload.get("results", [])
+        if not isinstance(results, list) or not all(
+            isinstance(result, dict) for result in results
+        ):
+            raise ValueError("retrieval results must be a list of objects")
     except (TypeError, ValueError):
-        payload = {"results": []}
+        payload = {"status": "UNAVAILABLE", "results": []}
     sources = _normalize_sources(payload)
+    status = payload.get("status")
+    if status is None:
+        status = "OK" if sources else "NO_RESULTS"
+    elif status not in {"OK", "NO_RESULTS", "UNAVAILABLE"}:
+        status = "UNAVAILABLE"
+    if status != "OK":
+        sources = []
     ctx["sources"] = sources
+    ctx["search_status"] = status
     ctx["empty_search"] = not sources
-    _log_tool(ctx, "search_hr_knowledge", "OK" if sources else "NO_RESULTS", len(sources), started)
-    return json.dumps({"sources": sources, "result_count": len(sources)}, ensure_ascii=False)
+    _log_tool(ctx, "search_hr_knowledge", status, len(sources), started)
+    return json.dumps(
+        {"status": status, "sources": sources, "result_count": len(sources)},
+        ensure_ascii=False,
+    )
 
 
 @tool
@@ -145,6 +165,9 @@ def draft_handoff(reason: str) -> str:
     """准备待员工确认的 HR 人工支持草稿；不会创建正式工单。"""
     ctx = _ctx()
     started = time.monotonic()
+    if ctx["search_status"] == "UNAVAILABLE":
+        _log_tool(ctx, "draft_handoff", "UNAVAILABLE", 0, started)
+        return json.dumps({"status": "UNAVAILABLE", "requires_confirmation": False})
     draft = ctx.get("draft")
     if draft is None:
         draft = hr_support_service.create_handoff_draft(
@@ -241,6 +264,8 @@ async def run_hr_agent(
                 else:
                     content = await selected.ainvoke(call.get("args", {}))
                 messages.append(ToolMessage(content=str(content), tool_call_id=call["id"]))
+                if ctx["search_status"] == "UNAVAILABLE":
+                    return _UNAVAILABLE_REPLY, None, []
                 if ctx["clarifying_question"]:
                     return ctx["clarifying_question"], ctx["draft"], ctx["sources"]
                 if ctx["draft"]:

@@ -194,6 +194,7 @@ async def test_search_rejects_high_distance_vector_only_source(db, test_tenant, 
     set_hr_runtime(db, test_tenant.id, test_tenant.slug, employee, "leave policy")
     result = json.loads(await search_hr_knowledge.ainvoke({"query": "leave policy"}))
 
+    assert result["status"] == "NO_RESULTS"
     assert result["sources"] == []
     assert result["result_count"] == 0
 
@@ -205,6 +206,7 @@ async def test_search_rejects_high_distance_vector_only_source(db, test_tenant, 
     set_hr_runtime(db, test_tenant.id, test_tenant.slug, employee, "leave policy")
     bm25_result = json.loads(await search_hr_knowledge.ainvoke({"query": "leave policy"}))
 
+    assert bm25_result["status"] == "OK"
     assert [source["source_id"] for source in bm25_result["sources"]] == [chunk.id]
 
 

@@ -146,6 +146,27 @@ class FakeNoSourceDraftLLM(_FakeLLM):
     ]
 
 
+class FakeUnavailableThenDraftLLM(_FakeLLM):
+    replies = [
+        AIMessage(
+            content="",
+            tool_calls=[{
+                "name": "search_hr_knowledge",
+                "args": {"query": "cross-border annual leave"},
+                "id": "search-unavailable",
+            }],
+        ),
+        AIMessage(
+            content="",
+            tool_calls=[{
+                "name": "draft_handoff",
+                "args": {"reason": "retrieval failed"},
+                "id": "draft-after-unavailable",
+            }],
+        ),
+    ]
+
+
 class FakeStatusLLM(_FakeLLM):
     replies = [
         AIMessage(
@@ -215,6 +236,98 @@ async def test_no_source_can_prepare_draft_but_not_handoff(db, test_tenant, monk
         ).delete(synchronize_session=False)
         db.query(User).filter(User.id == employee.id).delete(synchronize_session=False)
         db.commit()
+
+
+async def test_unavailable_search_blocks_model_handoff_draft(db, test_tenant, monkeypatch):
+    from app.core.agent import hr_agent
+
+    class CaptureLogger:
+        def __init__(self):
+            self.events = []
+
+        def info(self, event, **fields):
+            self.events.append((event, fields))
+
+    employee = make_employee(db, test_tenant)
+    llm = FakeUnavailableThenDraftLLM()
+    capture = CaptureLogger()
+
+    async def fake_search(_args):
+        return json.dumps({"status": "UNAVAILABLE", "results": []})
+
+    monkeypatch.setattr("app.core.agent.hr_agent.ChatOpenAI", lambda **_kwargs: llm)
+    monkeypatch.setattr(hr_agent, "logger", capture)
+    monkeypatch.setattr(
+        "app.core.agent.hr_agent.search_knowledge",
+        SimpleNamespace(ainvoke=fake_search),
+    )
+
+    reply, draft, sources = await run_hr_agent(
+        db, test_tenant.id, test_tenant.slug, employee, "How is leave handled?"
+    )
+
+    assert reply == "HR 知识检索服务暂时不可用，请稍后重试。"
+    assert draft is None
+    assert sources == []
+    assert llm.calls == 1
+    assert db.query(HandoffDraft).filter_by(tenant_id=test_tenant.id).count() == 0
+    assert db.query(SupportHandoff).filter_by(tenant_id=test_tenant.id).count() == 0
+    tool_event = next(
+        fields for event, fields in capture.events if event == "hr_agent_tool_completed"
+    )
+    assert tool_event["result_code"] == "UNAVAILABLE"
+
+
+@pytest.mark.parametrize("raw", ["not-json", "[]"])
+async def test_hr_search_treats_malformed_lower_json_as_unavailable(
+    db, test_tenant, monkeypatch, raw
+):
+    from app.core.agent import hr_agent
+
+    employee = make_employee(db, test_tenant)
+
+    async def fake_search(_args):
+        return raw
+
+    monkeypatch.setattr(
+        "app.core.agent.hr_agent.search_knowledge",
+        SimpleNamespace(ainvoke=fake_search),
+    )
+    hr_agent.set_hr_runtime(db, test_tenant.id, test_tenant.slug, employee, "leave policy")
+
+    observation = json.loads(
+        await hr_agent.search_hr_knowledge.ainvoke({"query": "leave policy"})
+    )
+
+    assert observation == {"status": "UNAVAILABLE", "sources": [], "result_count": 0}
+
+
+async def test_draft_handoff_refuses_persistence_after_unavailable_search(
+    db, test_tenant, monkeypatch
+):
+    from app.core.agent import hr_agent
+
+    employee = make_employee(db, test_tenant)
+
+    async def fake_search(_args):
+        return json.dumps({"status": "UNAVAILABLE", "results": []})
+
+    monkeypatch.setattr(
+        "app.core.agent.hr_agent.search_knowledge",
+        SimpleNamespace(ainvoke=fake_search),
+    )
+    hr_agent.set_hr_runtime(db, test_tenant.id, test_tenant.slug, employee, "leave policy")
+
+    search_result = json.loads(
+        await hr_agent.search_hr_knowledge.ainvoke({"query": "leave policy"})
+    )
+    draft_result = json.loads(
+        await hr_agent.draft_handoff.ainvoke({"reason": "retrieval failed"})
+    )
+
+    assert search_result["status"] == "UNAVAILABLE"
+    assert draft_result == {"status": "UNAVAILABLE", "requires_confirmation": False}
+    assert db.query(HandoffDraft).filter_by(tenant_id=test_tenant.id).count() == 0
 
 
 async def test_hr_agent_returns_clarifying_question_directly(db, test_tenant, monkeypatch):

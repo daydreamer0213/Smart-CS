@@ -1,23 +1,26 @@
-# Milestone 1: 生产就绪
+# Milestone 1: 企业 HR Service Agent 基座
 
-**Status:** active
-**Started:** 2026-06-24
+**Status:** done
+**Completed:** 2026-07-18
 
 ## Goal
 
-补全商户接入必需功能：文档导入、JWT 认证、自助注册。让 SmartCS 从技术 demo 变成可交付的 SaaS 产品。
+完成可交付的企业内部 HR 知识服务 Agent 后端：身份先行、知识有受众、回答可溯源、例外可转人工、状态可治理。
 
 ## Definition of Done
 
-- [ ] PDF/Word 文档上传后自动解析、分块、嵌入、入库，商户可在管理后台查看导入结果
-- [ ] JWT 认证替换 API Key，支持用户注册和登录
-- [ ] 租户自助注册页面，注册后自动创建 ChromaDB collection 和默认配置
-- [ ] 所有新功能有 pytest 测试覆盖（>= 80%）
-- [ ] pre-push review PASS
-- [ ] 74 项现有测试全过，无回归
+- [x] 文档上传后完成解析、分块、嵌入和入库，后台可查看导入结果。
+- [x] JWT 注册、登录和刷新令牌替换旧 API Key 身份边界。
+- [x] 租户与角色在后端校验；跨租户 HR 支持接口拒绝访问。
+- [x] 员工只能检索角色可见的制度文档，回答返回授权来源和规范化引用。
+- [x] Agent 可创建待确认转人工草稿；确认后形成正式 HR 支持请求。
+- [x] owner/admin 可查看、指派和解决请求；员工只能查看本人状态。
+- [x] Alembic 可初始化全新数据库，pytest 回归覆盖关键边界，演示脚本覆盖完整生命周期。
 
-## Phases
+## Scope Boundary
 
-1. Phase 1.1 — 文档导入 [active]
-2. Phase 1.2 — JWT 认证 [pending]
-3. Phase 1.3 — 租户自助注册 [pending]
+本里程碑不包含 SSO/SCIM、真实 HRIS 或工单系统适配、通知 SLA、生产级 tracing/metrics、CI/CD 和生产密钥治理；这些属于生产化加固阶段。
+
+## Next Milestone
+
+Milestone 2 聚焦真实企业系统接入与生产运维能力。WebSocket 和 Milvus 仅在实际规模需求出现后评估，不作为当前项目的伪需求。

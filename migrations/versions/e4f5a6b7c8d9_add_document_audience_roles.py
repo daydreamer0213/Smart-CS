@@ -23,20 +23,7 @@ def _add_audience_roles() -> None:
     )
 
 
-def upgrade() -> None:
-    if context.is_offline_mode():
-        # Offline SQL targets the normal legacy database with document tables already present.
-        _add_audience_roles()
-        return
-
-    inspector = sa.inspect(op.get_bind())
-    if inspector.has_table("documents"):
-        if "audience_roles" not in {
-            column["name"] for column in inspector.get_columns("documents")
-        }:
-            _add_audience_roles()
-        return
-
+def _create_documents() -> None:
     op.create_table(
         "documents",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -71,6 +58,9 @@ def upgrade() -> None:
     )
     op.create_index("ix_documents_tenant_id", "documents", ["tenant_id"])
     op.create_index("ix_documents_file_hash", "documents", ["file_hash"])
+
+
+def _create_document_chunks() -> None:
     op.create_table(
         "document_chunks",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -97,6 +87,25 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_document_chunks_document_id", "document_chunks", ["document_id"])
+
+
+def upgrade() -> None:
+    if context.is_offline_mode():
+        # Offline SQL targets the normal legacy database with document tables already present.
+        _add_audience_roles()
+        return
+
+    inspector = sa.inspect(op.get_bind())
+    if inspector.has_table("documents"):
+        if "audience_roles" not in {
+            column["name"] for column in inspector.get_columns("documents")
+        }:
+            _add_audience_roles()
+    else:
+        _create_documents()
+
+    if not inspector.has_table("document_chunks"):
+        _create_document_chunks()
 
 
 def downgrade() -> None:

@@ -16,7 +16,9 @@ def _alembic_config(database_path: Path) -> Config:
     return config
 
 
-def _create_legacy_document_tables(engine: sa.Engine) -> None:
+def _create_legacy_document_tables(
+    engine: sa.Engine, include_document_chunks: bool = True
+) -> None:
     metadata = sa.MetaData()
     sa.Table("tenants", metadata, autoload_with=engine)
     documents = sa.Table(
@@ -36,21 +38,22 @@ def _create_legacy_document_tables(engine: sa.Engine) -> None:
     )
     sa.Index("ix_documents_tenant_id", documents.c.tenant_id)
     sa.Index("ix_documents_file_hash", documents.c.file_hash)
-    document_chunks = sa.Table(
-        "document_chunks",
-        metadata,
-        sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
-        sa.Column("document_id", sa.String(36), sa.ForeignKey("documents.id"), nullable=False),
-        sa.Column("chunk_index", sa.Integer(), nullable=False),
-        sa.Column("content", sa.Text(), nullable=False),
-        sa.Column("embedding_id", sa.String(200)),
-        sa.Column("token_count", sa.Integer()),
-        sa.Column("keywords", sa.Text()),
-        sa.Column("status", sa.String(20), nullable=False),
-    )
-    sa.Index("ix_document_chunks_document_id", document_chunks.c.document_id)
+    if include_document_chunks:
+        document_chunks = sa.Table(
+            "document_chunks",
+            metadata,
+            sa.Column("id", sa.String(36), primary_key=True),
+            sa.Column("created_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
+            sa.Column("updated_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
+            sa.Column("document_id", sa.String(36), sa.ForeignKey("documents.id"), nullable=False),
+            sa.Column("chunk_index", sa.Integer(), nullable=False),
+            sa.Column("content", sa.Text(), nullable=False),
+            sa.Column("embedding_id", sa.String(200)),
+            sa.Column("token_count", sa.Integer()),
+            sa.Column("keywords", sa.Text()),
+            sa.Column("status", sa.String(20), nullable=False),
+        )
+        sa.Index("ix_document_chunks_document_id", document_chunks.c.document_id)
     metadata.create_all(engine)
 
 
@@ -75,6 +78,7 @@ def test_upgrade_head_creates_document_tables_for_empty_database(tmp_path):
     assert {"id", "created_at", "updated_at", "document_id", "chunk_index", "content",
             "embedding_id", "token_count", "keywords", "status"} <= set(chunk_columns)
     assert document_columns["audience_roles"]["nullable"] is False
+    assert document_columns["audience_roles"]["default"] == "'[]'"
     assert {foreign_key["referred_table"] for foreign_key in inspector.get_foreign_keys("documents")} == {"tenants"}
     assert {foreign_key["referred_table"] for foreign_key in inspector.get_foreign_keys("document_chunks")} == {"documents"}
     assert {index["name"] for index in inspector.get_indexes("documents")} >= {
@@ -169,6 +173,45 @@ def test_upgrade_head_preserves_legacy_document_rows(tmp_path):
 
     assert document.filename == "policy.txt"
     assert chunk.content == "Legacy policy content"
+
+
+def test_upgrade_head_recovers_missing_document_chunks_from_partial_schema(tmp_path):
+    database_path = tmp_path / "partial.db"
+    config = _alembic_config(database_path)
+    command.upgrade(config, LEGACY_REVISION)
+
+    engine = sa.create_engine(f"sqlite:///{database_path.as_posix()}")
+    _create_legacy_document_tables(engine, include_document_chunks=False)
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                "INSERT INTO tenants (id, slug, name, config_json, is_active) "
+                "VALUES ('tenant-2', 'tenant-two', 'Tenant Two', '{}', 1)"
+            )
+        )
+        connection.execute(
+            sa.text(
+                "INSERT INTO documents "
+                "(id, tenant_id, filename, file_type, file_hash, status) "
+                "VALUES ('document-2', 'tenant-2', 'partial.txt', 'txt', 'partial-hash', 'ready')"
+            )
+        )
+
+    command.stamp(config, LEGACY_REVISION)
+    command.upgrade(config, "head")
+
+    inspector = sa.inspect(engine)
+    assert "document_chunks" in inspector.get_table_names()
+    assert "audience_roles" in {
+        column["name"] for column in inspector.get_columns("documents")
+    }
+    document = sa.Table("documents", sa.MetaData(), autoload_with=engine)
+    with engine.connect() as connection:
+        audience_roles = connection.execute(
+            sa.select(document.c.audience_roles).where(document.c.id == "document-2")
+        ).scalar_one()
+
+    assert audience_roles == []
 
 
 def test_offline_upgrade_emits_legacy_document_add_column_sql(tmp_path):

@@ -1,5 +1,8 @@
-from pathlib import Path
 import io
+import os
+from pathlib import Path
+import subprocess
+import sys
 
 from alembic import command
 from alembic.config import Config
@@ -14,6 +17,34 @@ def _alembic_config(database_path: Path) -> Config:
     config = Config(str(PROJECT_ROOT / "alembic.ini"))
     config.set_main_option("sqlalchemy.url", f"sqlite:///{database_path.as_posix()}")
     return config
+
+
+def test_cli_upgrade_honors_database_url(tmp_path):
+    target_db = tmp_path / "requested.db"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "alembic",
+            "-c",
+            str(PROJECT_ROOT / "alembic.ini"),
+            "upgrade",
+            "head",
+        ],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "DATABASE_URL": f"sqlite:///{target_db.as_posix()}",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert target_db.exists()
+    assert not (tmp_path / "smartcs.db").exists()
 
 
 def _create_legacy_document_tables(

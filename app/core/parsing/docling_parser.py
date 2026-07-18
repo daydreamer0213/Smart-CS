@@ -86,6 +86,8 @@ def map_docling_result(
 
     if remaining_table_fallbacks:
         warnings.append("advanced_parser_incomplete")
+    if _has_repeated_native_table_data(elements):
+        warnings.append("advanced_parser_incomplete")
 
     document = ParsedDocument(
         parser_name="docling",
@@ -228,6 +230,82 @@ def _bbox_overlap_ratio(first, second) -> float:
     intersection = width * height
     union = first_width * first_height + second_width * second_height - intersection
     return intersection / union
+
+
+def _has_repeated_native_table_data(elements: list[ParsedElement]) -> bool:
+    non_tables = [element for element in elements if element.element_type != "table"]
+    for table in elements:
+        if (
+            table.element_type != "table"
+            or table.metadata.get("ocr") is not False
+            or not table.table_markdown
+        ):
+            continue
+        page_text = "".join(
+            _normalize_table_cell(element.text)
+            for element in non_tables
+            if _page_spans_overlap(table, element)
+        )
+        if any(
+            all(cell in page_text for cell in row)
+            for row in _markdown_data_rows(table.table_markdown)
+        ):
+            return True
+    return False
+
+
+def _markdown_data_rows(markdown: str) -> list[list[str]]:
+    rows = [_markdown_row_cells(line) for line in markdown.splitlines()]
+    separator_index = next(
+        (
+            index
+            for index, row in enumerate(rows)
+            if row and all(_is_markdown_separator(cell) for cell in row)
+        ),
+        None,
+    )
+    if separator_index is None:
+        return []
+
+    data_rows = []
+    for row in rows[separator_index + 1 :]:
+        cells = list(
+            dict.fromkeys(
+                cell
+                for cell in map(_normalize_table_cell, row)
+                if any(character.isalnum() for character in cell)
+            )
+        )
+        if len(cells) >= 2:
+            data_rows.append(cells)
+    return data_rows
+
+
+def _markdown_row_cells(line: str) -> list[str]:
+    line = line.strip()
+    if not line.startswith("|") or not line.endswith("|"):
+        return []
+    return [cell.strip() for cell in line[1:-1].split("|")]
+
+
+def _is_markdown_separator(cell: str) -> bool:
+    cell = cell.strip()
+    return len(cell) >= 3 and "-" in cell and set(cell) <= {"-", ":"}
+
+
+def _normalize_table_cell(text: str) -> str:
+    return "".join(text.replace(r"\|", "|").split()).strip("`*_")
+
+
+def _page_spans_overlap(first: ParsedElement, second: ParsedElement) -> bool:
+    if (
+        first.page_start is None
+        or first.page_end is None
+        or second.page_start is None
+        or second.page_end is None
+    ):
+        return False
+    return first.page_start <= second.page_end and second.page_start <= first.page_end
 
 
 def _docling_version() -> str:

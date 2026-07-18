@@ -139,6 +139,74 @@ def test_docling_result_uses_controlled_native_markdown_for_an_empty_table():
     assert document.quality.status == "passed"
 
 
+def test_native_filled_table_marks_a_duplicate_ocr_data_row_for_review():
+    from app.core.parsing.docling_parser import map_docling_result
+
+    document = map_docling_result(
+        _result(
+            items=[
+                _Item("text", "20年以上 15天", [1]),
+                _Item(
+                    "table",
+                    "",
+                    [1],
+                    markdown="",
+                    bboxes=[_BBox(70, 100, 430, 270)],
+                ),
+            ],
+            page_count=1,
+        ),
+        expected_page_count=1,
+        parser_version="2.113.0",
+        table_fallbacks=[
+            (
+                1,
+                (72, 110, 430, 270),
+                "| 工龄 | 年假天数 |\n| --- | --- |\n| 20年以上 | 15天 |",
+            )
+        ],
+    )
+
+    normalized_text = "".join(document.plain_text.split())
+    assert normalized_text.count("20年以上") == 2
+    assert normalized_text.count("15天") == 2
+    assert document.elements[1].metadata == {"ocr": False}
+    assert document.quality.status == "review_required"
+    assert document.quality.warnings == ["advanced_parser_incomplete"]
+
+
+def test_native_filled_table_ignores_header_repeated_in_non_table_content():
+    from app.core.parsing.docling_parser import map_docling_result
+
+    document = map_docling_result(
+        _result(
+            items=[
+                _Item("section_header", "工龄 年假天数", [1]),
+                _Item(
+                    "table",
+                    "",
+                    [1],
+                    markdown="",
+                    bboxes=[_BBox(70, 100, 430, 270)],
+                ),
+            ],
+            page_count=1,
+        ),
+        expected_page_count=1,
+        parser_version="2.113.0",
+        table_fallbacks=[
+            (
+                1,
+                (72, 110, 430, 270),
+                "| 工龄 | 年假天数 |\n| --- | --- |\n| 20年以上 | 15天 |",
+            )
+        ],
+    )
+
+    assert document.quality.status == "passed"
+    assert document.quality.warnings == []
+
+
 def test_non_empty_docling_table_keeps_its_markdown_after_native_match_is_consumed():
     from app.core.parsing.docling_parser import map_docling_result
 

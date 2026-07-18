@@ -1,11 +1,27 @@
 from types import SimpleNamespace
 
 
+class _BBox:
+    def __init__(self, left, top, right, bottom):
+        self.l = left
+        self.t = top
+        self.r = right
+        self.b = bottom
+
+    def to_top_left_origin(self, *, page_height):
+        assert page_height == 842
+        return self
+
+
 class _Item:
-    def __init__(self, label, text, pages, *, level=1, markdown=None):
+    def __init__(self, label, text, pages, *, level=1, markdown=None, bboxes=None):
         self.label = label
         self.text = text
-        self.prov = [SimpleNamespace(page_no=page) for page in pages]
+        bboxes = bboxes or [None] * len(pages)
+        self.prov = [
+            SimpleNamespace(page_no=page, bbox=bbox)
+            for page, bbox in zip(pages, bboxes, strict=True)
+        ]
         self.level = level
         self._markdown = markdown
 
@@ -25,7 +41,10 @@ class _Document:
 def _result(*, status="success", items=(), page_count=2, timeout=False):
     return SimpleNamespace(
         status=status,
-        pages=[object() for _ in range(page_count)],
+        pages=[
+            SimpleNamespace(size=SimpleNamespace(height=842))
+            for _ in range(page_count)
+        ],
         document=_Document(items),
         has_timeout_errors=lambda: timeout,
     )
@@ -91,7 +110,13 @@ def test_docling_result_uses_controlled_native_markdown_for_an_empty_table():
     result = _result(
         items=[
             _Item("section_header", "Leave table", [1]),
-            _Item("table", "", [1], markdown=""),
+            _Item(
+                "table",
+                "",
+                [1],
+                markdown="",
+                bboxes=[_BBox(70, 100, 430, 270)],
+            ),
         ],
         page_count=1,
     )
@@ -100,7 +125,9 @@ def test_docling_result_uses_controlled_native_markdown_for_an_empty_table():
         result,
         expected_page_count=1,
         parser_version="2.113.0",
-        table_fallbacks=[(1, "| Years | Days |\n| --- | --- |\n| 10 | 10 |")],
+        table_fallbacks=[
+            (1, (72, 110, 430, 270), "| Years | Days |\n| --- | --- |\n| 10 | 10 |")
+        ],
     )
 
     table = document.elements[1]
@@ -129,27 +156,156 @@ def test_docling_result_blocks_an_empty_table_without_a_fallback():
     assert document.quality.warnings == ["advanced_parser_incomplete"]
 
 
-def test_native_table_fallback_does_not_reorder_docling_items():
+def test_native_table_fallback_preserves_same_page_before_table_after_order():
     from app.core.parsing.docling_parser import map_docling_result
 
     document = map_docling_result(
         _result(
             items=[
-                _Item("section_header", "Page one", [1]),
-                _Item("text", "Page two", [2]),
+                _Item("text", "Before table", [1]),
+                _Item(
+                    "table",
+                    "",
+                    [1],
+                    markdown="",
+                    bboxes=[_BBox(70, 200, 430, 300)],
+                ),
+                _Item("text", "After table", [1]),
             ],
-            page_count=2,
+            page_count=1,
         ),
-        expected_page_count=2,
+        expected_page_count=1,
         parser_version="2.113.0",
-        table_fallbacks=[(1, "| Header |\n| --- |\n| value |")],
+        table_fallbacks=[
+            (1, (72, 205, 430, 295), "| Header |\n| --- |\n| value |")
+        ],
     )
 
-    assert [(item.element_type, item.page_start) for item in document.elements] == [
-        ("heading", 1),
-        ("table", 1),
-        ("paragraph", 2),
+    assert [(item.element_type, item.text) for item in document.elements] == [
+        ("paragraph", "Before table"),
+        ("table", "| Header |\n| --- |\n| value |"),
+        ("paragraph", "After table"),
     ]
+
+
+def test_native_table_fallback_matches_multiple_same_page_tables_once_by_bbox():
+    from app.core.parsing.docling_parser import map_docling_result
+
+    top_markdown = "| Top |\n| --- |\n| first |"
+    bottom_markdown = "| Bottom |\n| --- |\n| second |"
+    document = map_docling_result(
+        _result(
+            items=[
+                _Item(
+                    "table",
+                    "",
+                    [1],
+                    markdown="",
+                    bboxes=[_BBox(50, 100, 250, 180)],
+                ),
+                _Item(
+                    "table",
+                    "",
+                    [1],
+                    markdown="",
+                    bboxes=[_BBox(50, 300, 250, 380)],
+                ),
+            ],
+            page_count=1,
+        ),
+        expected_page_count=1,
+        parser_version="2.113.0",
+        table_fallbacks=[
+            (1, (52, 302, 248, 378), bottom_markdown),
+            (1, (52, 102, 248, 178), top_markdown),
+        ],
+    )
+
+    assert [item.text for item in document.elements] == [
+        top_markdown,
+        bottom_markdown,
+    ]
+    assert document.plain_text.count("first") == 1
+    assert document.plain_text.count("second") == 1
+    assert document.quality.status == "passed"
+
+
+def test_unmatched_native_table_is_not_appended_or_allowed_to_pass():
+    from app.core.parsing.docling_parser import map_docling_result
+
+    document = map_docling_result(
+        _result(items=[_Item("text", "Body text", [1])], page_count=1),
+        expected_page_count=1,
+        parser_version="2.113.0",
+        table_fallbacks=[
+            (1, (50, 200, 250, 280), "| Missing |\n| --- |\n| table |")
+        ],
+    )
+
+    assert [item.text for item in document.elements] == ["Body text"]
+    assert document.quality.status == "review_required"
+    assert document.quality.warnings == ["advanced_parser_incomplete"]
+
+
+def test_incidental_bbox_overlap_does_not_replace_a_docling_table():
+    from app.core.parsing.docling_parser import map_docling_result
+
+    document = map_docling_result(
+        _result(
+            items=[
+                _Item("text", "Body text", [1]),
+                _Item(
+                    "table",
+                    "",
+                    [1],
+                    markdown="",
+                    bboxes=[_BBox(50, 100, 250, 180)],
+                ),
+            ],
+            page_count=1,
+        ),
+        expected_page_count=1,
+        parser_version="2.113.0",
+        table_fallbacks=[
+            (1, (240, 170, 400, 300), "| Wrong |\n| --- |\n| table |")
+        ],
+    )
+
+    assert [item.text for item in document.elements] == ["Body text"]
+    assert document.quality.status == "review_required"
+    assert document.quality.warnings == ["advanced_parser_incomplete"]
+
+
+def test_runtime_validation_rejects_tempfile_directory_outside_parser_temp(
+    monkeypatch, tmp_path
+):
+    from app.core.parsing import docling_parser
+
+    parser_root = tmp_path / "parser"
+    parser_temp = parser_root / "tmp"
+    artifacts = parser_root / "artifacts"
+    tessdata = parser_root / "tessdata"
+    tesseract = parser_root / "tesseract.exe"
+    parser_temp.mkdir(parents=True)
+    artifacts.mkdir()
+    tessdata.mkdir()
+    tesseract.touch()
+    (tessdata / "chi_sim.traineddata").touch()
+    (tessdata / "eng.traineddata").touch()
+    monkeypatch.setattr(
+        docling_parser.settings, "parser_temp_dir", str(parser_temp)
+    )
+    monkeypatch.setattr(
+        docling_parser.settings, "docling_artifacts_path", str(artifacts)
+    )
+    monkeypatch.setattr(docling_parser.settings, "tesseract_cmd", str(tesseract))
+    monkeypatch.setattr(docling_parser.settings, "tessdata_prefix", str(tessdata))
+    monkeypatch.setattr(docling_parser.tempfile, "gettempdir", lambda: str(tmp_path))
+
+    import pytest
+
+    with pytest.raises(RuntimeError, match="Docling runtime is unavailable"):
+        docling_parser._validate_runtime_paths()
 
 
 def test_docling_adapter_returns_controlled_failure_when_optional_runtime_is_unavailable(monkeypatch):

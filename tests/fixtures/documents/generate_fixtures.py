@@ -105,8 +105,10 @@ def build_two_column_policy():
     def draw(page):
         add_text(page, (72, 70), "入职办理", 15)
         add_text(page, (72, 110), "新员工应在首日完成身份核验。")
+        add_text(page, (72, 150), "入职资料应在次日完成归档。")
         add_text(page, (320, 70), "离职办理", 15)
         add_text(page, (320, 110), "离职员工应在三天内归还设备。")
+        add_text(page, (320, 150), "离职权限应在当日完成关闭。")
 
     save_pdf("two_column_policy.pdf", [draw])
 

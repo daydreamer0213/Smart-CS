@@ -2,12 +2,16 @@
 
 import importlib
 import io
+import tempfile
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from app.config import settings
 from app.core.parsing.contracts import ParsedDocument, ParsedElement
 from app.core.parsing.quality import evaluate_parse_quality, parser_failure_quality
+
+NativeTable = tuple[int, tuple[float, float, float, float], str]
+MIN_TABLE_BBOX_OVERLAP = 0.5
 
 
 def parse_docling_pdf(
@@ -38,7 +42,7 @@ def map_docling_result(
     *,
     expected_page_count: int,
     parser_version: str,
-    table_fallbacks: list[tuple[int, str]] | None = None,
+    table_fallbacks: list[NativeTable] | None = None,
 ) -> ParsedDocument:
     """Map Docling's ordered items to the stable SmartCS parser contract."""
     elements: list[ParsedElement] = []
@@ -51,16 +55,11 @@ def map_docling_result(
         page_start, page_end = _page_span(item)
         metadata = {"ocr": True}
         if label == "table":
-            fallback_index = next(
-                (
-                    index
-                    for index, (page_no, _) in enumerate(remaining_table_fallbacks)
-                    if page_no == page_start
-                ),
-                None,
+            fallback_index = _matching_native_table_index(
+                item, result, remaining_table_fallbacks
             )
             if fallback_index is not None:
-                _, text = remaining_table_fallbacks.pop(fallback_index)
+                _, _, text = remaining_table_fallbacks.pop(fallback_index)
                 table_markdown = text
                 metadata = {"ocr": False}
             elif not text:
@@ -83,25 +82,8 @@ def map_docling_result(
             )
         )
 
-    for page_no, table_markdown in remaining_table_fallbacks:
-        table_element = ParsedElement(
-            text=table_markdown,
-            element_type="table",
-            page_start=page_no,
-            page_end=page_no,
-            section_path=[],
-            table_markdown=table_markdown,
-            metadata={"ocr": False},
-        )
-        insert_at = next(
-            (
-                index
-                for index, element in enumerate(elements)
-                if element.page_start is not None and element.page_start > page_no
-            ),
-            len(elements),
-        )
-        elements.insert(insert_at, table_element)
+    if remaining_table_fallbacks:
+        warnings.append("advanced_parser_incomplete")
 
     document = ParsedDocument(
         parser_name="docling",
@@ -165,25 +147,78 @@ def _validate_runtime_paths() -> None:
         str(Path(settings.tessdata_prefix) / "chi_sim.traineddata"),
         str(Path(settings.tessdata_prefix) / "eng.traineddata"),
     )
-    if not all(Path(path).exists() for path in required):
+    configured_temp = Path(settings.parser_temp_dir).resolve()
+    runtime_temp = Path(tempfile.gettempdir()).resolve()
+    paths_exist = all(Path(path).exists() for path in required)
+    if not paths_exist or not runtime_temp.is_relative_to(configured_temp):
         raise RuntimeError("Docling runtime is unavailable")
 
 
-def _extract_native_table_markdowns(data: bytes) -> list[tuple[int, str]]:
+def _extract_native_table_markdowns(data: bytes) -> list[NativeTable]:
     """Use the existing PDF backend only to recover reliable digital tables."""
     import fitz
 
-    tables: list[tuple[int, str]] = []
+    tables: list[NativeTable] = []
     document = fitz.open(stream=data, filetype="pdf")
     try:
         for page_no, page in enumerate(document, start=1):
             for table in page.find_tables().tables:
                 markdown = table.to_markdown().strip()
                 if markdown:
-                    tables.append((page_no, markdown))
+                    tables.append(
+                        (page_no, tuple(float(value) for value in table.bbox), markdown)
+                    )
     finally:
         document.close()
     return tables
+
+
+def _matching_native_table_index(
+    item, result, native_tables: list[NativeTable]
+) -> int | None:
+    best_index = None
+    best_overlap = 0.0
+    for page_no, item_bbox in _item_top_left_bboxes(item, result):
+        for index, (native_page_no, native_bbox, _) in enumerate(native_tables):
+            if native_page_no != page_no:
+                continue
+            overlap = _bbox_overlap_ratio(item_bbox, native_bbox)
+            if overlap > best_overlap:
+                best_index = index
+                best_overlap = overlap
+    return best_index if best_overlap >= MIN_TABLE_BBOX_OVERLAP else None
+
+
+def _item_top_left_bboxes(item, result):
+    bboxes = []
+    pages = getattr(result, "pages", ())
+    for provenance in getattr(item, "prov", ()):
+        page_no = getattr(provenance, "page_no", None)
+        bbox = getattr(provenance, "bbox", None)
+        if (
+            not isinstance(page_no, int)
+            or not 1 <= page_no <= len(pages)
+            or bbox is None
+        ):
+            continue
+        try:
+            bbox = bbox.to_top_left_origin(page_height=pages[page_no - 1].size.height)
+            coordinates = tuple(
+                float(getattr(bbox, name)) for name in ("l", "t", "r", "b")
+            )
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if coordinates[0] < coordinates[2] and coordinates[1] < coordinates[3]:
+            bboxes.append((page_no, coordinates))
+    return bboxes
+
+
+def _bbox_overlap_ratio(first, second) -> float:
+    width = max(0.0, min(first[2], second[2]) - max(first[0], second[0]))
+    height = max(0.0, min(first[3], second[3]) - max(first[1], second[1]))
+    first_area = (first[2] - first[0]) * (first[3] - first[1])
+    second_area = (second[2] - second[0]) * (second[3] - second[1])
+    return width * height / min(first_area, second_area)
 
 
 def _docling_version() -> str:

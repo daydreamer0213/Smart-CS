@@ -24,7 +24,12 @@ FIXTURES = Path(__file__).parent / "fixtures" / "documents"
         (
             "two_column_policy.pdf",
             1,
-            ["新员工应在首日完成身份核验。", "离职员工应在三天内归还设备。"],
+            [
+                "新员工应在首日完成身份核验。",
+                "入职资料应在次日完成归档。",
+                "离职员工应在三天内归还设备。",
+                "离职权限应在当日完成关闭。",
+            ],
         ),
     ],
 )
@@ -37,7 +42,7 @@ def test_advanced_pdf_fixtures_use_docling_with_controlled_quality(
 
     assert document.parser_name == "docling"
     assert document.page_count == page_count
-    assert document.quality.status in {"passed", "review_required"}
+    assert document.quality.status == "passed"
     assert "parser_exception" not in document.quality.warnings
     assert document.elements
     assert all(
@@ -54,5 +59,12 @@ def test_advanced_pdf_fixtures_use_docling_with_controlled_quality(
 
     if filename == "leave_table.pdf":
         tables = [element for element in document.elements if element.table_markdown]
-        assert tables
+        assert len(tables) == 1
         assert all(table.metadata == {"ocr": False} for table in tables)
+        rows = ["".join(row.split()) for row in tables[0].table_markdown.splitlines()]
+        header = next(row for row in rows if "工龄" in row)
+        last_row = next(row for row in rows if "20年以上" in row)
+        assert "年假天数" in header
+        assert "15天" in last_row
+        for value in ("工龄", "年假天数", "20年以上", "15天"):
+            assert tables[0].table_markdown.count(value) == 1

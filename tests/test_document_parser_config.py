@@ -9,9 +9,32 @@ from app.config import Settings
 def test_docling_requirements_pin_verified_windows_cpu_pair():
     requirements = (Path(__file__).parents[1] / "requirements-docling.txt").read_text()
 
+    assert "docling-slim[format-pdf,models-local]>=2.113,<2.114" in requirements
     assert "opencv-python-headless>=4.6.0.66,<5.0.0.0" in requirements
     assert "torch==2.12.1" in requirements
     assert "torchvision==0.27.1" in requirements
+
+
+def test_docling_runtime_versions_and_configuration_are_committed():
+    evidence = (
+        Path(__file__).parents[1] / "docs" / "operations" / "docling-ocr-setup.md"
+    ).read_text(encoding="utf-8")
+
+    for expected in (
+        "Verified 2026-07-18",
+        "Python 3.12.13",
+        "docling-slim 2.113.0",
+        "docling-core 2.87.1",
+        "docling-ibm-models 3.13.3",
+        "opencv-python-headless 4.13.0.92",
+        "torch 2.12.1",
+        "torchvision 0.27.1",
+        "Tesseract 5.5.2",
+        "`chi_sim+eng`",
+        "CPU, 4 threads",
+        "`D:\\DevData\\smartcs\\tmp`",
+    ):
+        assert expected in evidence
 
 
 def test_document_parser_defaults_keep_large_artifacts_under_d_devdata_root():

@@ -172,13 +172,21 @@ def test_two_column_facts_are_drawn_on_opposite_page_halves():
     )
     document = fitz.open(FIXTURE_DIR / entry["filename"])
     page = document[0]
-    left = page.search_for("新员工应在首日完成身份核验。")
-    right = page.search_for("离职员工应在三天内归还设备。")
+    left = [
+        page.search_for("新员工应在首日完成身份核验。"),
+        page.search_for("入职资料应在次日完成归档。"),
+    ]
+    right = [
+        page.search_for("离职员工应在三天内归还设备。"),
+        page.search_for("离职权限应在当日完成关闭。"),
+    ]
 
-    assert len(left) == len(right) == 1
-    assert left[0].x1 < page.rect.width / 2
-    assert right[0].x0 > page.rect.width / 2
-    assert left[0].y0 == pytest.approx(right[0].y0, abs=1)
+    assert all(len(matches) == 1 for matches in [*left, *right])
+    assert all(matches[0].x1 < page.rect.width / 2 for matches in left)
+    assert all(matches[0].x0 > page.rect.width / 2 for matches in right)
+    assert left[0][0].y0 == pytest.approx(right[0][0].y0, abs=1)
+    assert left[1][0].y0 == pytest.approx(right[1][0].y0, abs=1)
+    assert left[0][0].y0 < left[1][0].y0
     document.close()
 
 

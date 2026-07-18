@@ -112,6 +112,28 @@ The language check must succeed for both `eng` and `chi_sim`. Keep the
 executable and `tessdata` directory together under `PARSER_DATA_ROOT`; do not
 rely on a system-drive installation or a machine-wide `PATH` entry.
 
+## Verified runtime evidence
+
+Verified 2026-07-18 on the supported Windows CPU environment:
+
+- Python 3.12.13
+- docling-slim 2.113.0
+- docling-core 2.87.1
+- docling-ibm-models 3.13.3
+- opencv-python-headless 4.13.0.92
+- torch 2.12.1
+- torchvision 0.27.1
+- Tesseract 5.5.2 with `chi_sim+eng`
+
+The verified parser configuration is CPU, 4 threads, full-page Tesseract CLI
+OCR, offline layout/TableFormer artifacts under
+`D:\DevData\smartcs\docling\artifacts`, and Python tempfile resolution to
+`D:\DevData\smartcs\tmp`. `_validate_runtime_paths` checks the resolved
+runtime temp directory is the configured parser temp directory or one of its
+children. A mismatch produces the same controlled unavailable-runtime outcome
+as a missing executable, language pack, or model artifact; it does not change
+process-global environment variables.
+
 ## Audit cache locations before parsing
 
 Before the first real parse, confirm that every configured location resolves

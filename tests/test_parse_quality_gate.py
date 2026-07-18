@@ -156,6 +156,25 @@ def test_quality_gate_requires_review_for_invalid_ocr_confidence(ocr_confidence)
     assert "ocr_confidence" not in quality.metrics
 
 
+@pytest.mark.parametrize(
+    "ocr_confidence",
+    [10**10000, -(10**10000)],
+    ids=["huge-positive-integer", "huge-negative-integer"],
+)
+def test_quality_gate_handles_huge_integer_ocr_confidence_without_serializing_it(
+    ocr_confidence,
+):
+    from app.core.parsing.quality import evaluate_parse_quality
+
+    quality = evaluate_parse_quality(
+        _document(metadata={"ocr_confidence": ocr_confidence})
+    )
+
+    assert quality.status == "review_required"
+    assert quality.warnings == ["invalid_ocr_confidence"]
+    assert "ocr_confidence" not in quality.metrics
+
+
 def test_parser_failure_quality_hides_exception_details():
     from app.core.parsing.quality import SAFE_PARSE_ERROR_MESSAGE, parser_failure_quality
 

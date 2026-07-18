@@ -118,8 +118,12 @@ def _append_warning(
 
 
 def _is_finite_number(value: object) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value)
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    return isinstance(value, float) and isfinite(value)
 
 
 def _is_valid_ocr_confidence(value: object) -> bool:
-    return _is_finite_number(value) and 0.0 <= value <= 1.0
+    return _is_finite_number(value) and 0 <= value <= 1

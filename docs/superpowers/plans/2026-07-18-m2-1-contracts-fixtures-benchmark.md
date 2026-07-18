@@ -766,7 +766,7 @@ Run:
 
 Expected: all selected tests pass.
 
-- [ ] **Step 3: Run the complete regression suite**
+- [x] **Step 3: Run the complete regression suite**
 
 Run:
 

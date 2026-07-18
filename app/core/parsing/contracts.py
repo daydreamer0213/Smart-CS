@@ -1,4 +1,4 @@
-from typing import Literal, Protocol, runtime_checkable
+from typing import Annotated, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -32,6 +32,8 @@ class ParsedElement(BaseModel):
 
     @model_validator(mode="after")
     def validate_page_span(self):
+        if self.page_start is None and self.page_end is not None:
+            raise ValueError("page_start is required when page_end is set")
         if self.page_start is not None and self.page_end is None:
             self.page_end = self.page_start
         if (
@@ -69,9 +71,23 @@ class KnowledgeChunk(BaseModel):
     page_end: int | None = Field(default=None, ge=1)
     section_path: list[str] = Field(default_factory=list)
     element_types: list[ElementType] = Field(default_factory=list)
-    source_element_indexes: list[int] = Field(default_factory=list)
+    source_element_indexes: list[Annotated[int, Field(ge=0)]] = Field(default_factory=list)
     token_count: int = Field(ge=0)
     metadata: dict[str, MetadataScalar] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_page_span(self):
+        if self.page_start is None and self.page_end is not None:
+            raise ValueError("page_start is required when page_end is set")
+        if self.page_start is not None and self.page_end is None:
+            self.page_end = self.page_start
+        if (
+            self.page_start is not None
+            and self.page_end is not None
+            and self.page_end < self.page_start
+        ):
+            raise ValueError("page_end must be greater than or equal to page_start")
+        return self
 
 
 @runtime_checkable

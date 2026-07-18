@@ -2,6 +2,23 @@ import pytest
 from pydantic import ValidationError
 
 
+def _element(**page_span):
+    from app.core.parsing.contracts import ParsedElement
+
+    return ParsedElement(text="policy", element_type="paragraph", **page_span)
+
+
+def _chunk(**page_span):
+    from app.core.parsing.contracts import KnowledgeChunk
+
+    return KnowledgeChunk(
+        content="policy",
+        contextualized_content="policy",
+        token_count=1,
+        **page_span,
+    )
+
+
 def test_parsed_document_preserves_source_structure():
     from app.core.parsing.contracts import ParsedDocument, ParsedElement
 
@@ -32,15 +49,34 @@ def test_parsed_document_preserves_source_structure():
     assert document.elements[1].section_path == ["Leave", "Entitlement"]
 
 
-def test_parsed_element_rejects_invalid_page_span():
-    from app.core.parsing.contracts import ParsedElement
+@pytest.mark.parametrize("factory", [_element, _chunk])
+def test_page_span_defaults_end_to_start(factory):
+    item = factory(page_start=3)
 
+    assert item.page_end == 3
+
+
+@pytest.mark.parametrize("factory", [_element, _chunk])
+def test_page_span_rejects_end_without_start(factory):
+    with pytest.raises(ValidationError, match="page_start"):
+        factory(page_end=3)
+
+
+@pytest.mark.parametrize("factory", [_element, _chunk])
+def test_page_span_rejects_reversed_range(factory):
     with pytest.raises(ValidationError, match="page_end"):
-        ParsedElement(
-            text="policy",
-            element_type="paragraph",
-            page_start=3,
-            page_end=2,
+        factory(page_start=3, page_end=2)
+
+
+def test_knowledge_chunk_rejects_negative_source_element_index():
+    from app.core.parsing.contracts import KnowledgeChunk
+
+    with pytest.raises(ValidationError, match="source_element_indexes"):
+        KnowledgeChunk(
+            content="policy",
+            contextualized_content="policy",
+            source_element_indexes=[-1],
+            token_count=1,
         )
 
 

@@ -1,5 +1,6 @@
 """Application configuration loaded from .env via pydantic-settings."""
 
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,6 +25,15 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_dir: str = "logs"
 
+    # Optional local document parser. Keep downloaded artifacts off the system drive.
+    docling_artifacts_path: str = "D:/DevData/smartcs/docling/artifacts"
+    hf_home: str = "D:/DevData/smartcs/huggingface"
+    torch_home: str = "D:/DevData/smartcs/torch"
+    tesseract_cmd: str = "D:/DevData/smartcs/tesseract/tesseract.exe"
+    tessdata_prefix: str = "D:/DevData/smartcs/tesseract/tessdata/"
+    docling_device: str = "cpu"
+    docling_num_threads: int = Field(default=4, ge=1)
+
     # Agent
     agent_recursion_limit: int = 10
     agent_timeout_seconds: int = 60
@@ -34,5 +44,18 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
+
+    @field_validator(
+        "docling_artifacts_path",
+        "hf_home",
+        "torch_home",
+        "tesseract_cmd",
+        "tessdata_prefix",
+    )
+    @classmethod
+    def document_parser_paths_must_use_d_drive(cls, value: str) -> str:
+        if not value.replace("\\", "/").lower().startswith("d:/"):
+            raise ValueError("document parser paths must be on D:")
+        return value
 
 settings = Settings()

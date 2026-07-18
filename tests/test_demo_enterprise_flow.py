@@ -1,3 +1,5 @@
+import secrets
+
 import pytest
 
 from scripts import demo_enterprise_flow as demo
@@ -40,6 +42,8 @@ def test_live_demo_stops_when_assistant_model_is_unavailable(monkeypatch):
 
 def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch):
     calls = []
+    monkeypatch.setenv("SMARTCS_DEMO_PASSWORD", "ignored-by-script")
+    monkeypatch.setattr(secrets, "token_urlsafe", lambda _size: "generated-at-runtime")
     registrations = iter([
         {"access_token": "owner-token", "user": {"id": "owner-1"}},
         {"access_token": "admin-token", "user": {"id": "admin-1"}},
@@ -56,6 +60,7 @@ def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch):
         if path == "/health":
             return 200, {"status": "ok"}
         if path == "/api/v1/auth/register":
+            assert kwargs["json_body"]["password"] == "generated-at-runtime"
             return 201, next(registrations)
         if path.endswith("/documents/upload"):
             return 201, {"document_id": "doc-1", "status": "ready", "chunk_count": 1}
@@ -83,3 +88,4 @@ def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch):
     assert any(path.endswith("/drafts/draft-1/confirm") for path in paths)
     assert any(path.endswith("/hr-support/admin/handoff-1") for path in paths)
     assert any(path.endswith("/hr-support/me") for path in paths)
+    assert demo._demo_password() == "generated-at-runtime"

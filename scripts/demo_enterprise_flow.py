@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import secrets
 import string
 import sys
 import time
@@ -28,6 +29,10 @@ class DemoFailure(RuntimeError):
 
 def _suffix() -> str:
     return "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6))
+
+
+def _demo_password() -> str:
+    return secrets.token_urlsafe(24)
 
 
 def _request(method: str, path: str, *, token: str | None = None, json_body=None, data=None, headers=None):
@@ -89,7 +94,7 @@ def _require(status: int, expected: set[int], label: str) -> None:
         raise DemoFailure(f"{label} failed: expected {sorted(expected)}, got {status}")
 
 
-def _require_live_chat(status: int, body: dict, label: str) -> None:
+def _require_live_chat(status: int, label: str) -> None:
     if status == 503:
         raise DemoFailure(
             f"{label} cannot call the configured LLM. Check LLM_API_KEY, "
@@ -121,7 +126,7 @@ def _show_summary(**values) -> None:
 def main() -> int:
     suffix = _suffix()
     slug = f"beichen-hr-{suffix}"
-    password = os.getenv("SMARTCS_DEMO_PASSWORD", "Password123")
+    password = _demo_password()
 
     _print_step("Health")
     status, _ = _request("GET", "/health")
@@ -205,7 +210,7 @@ def main() -> int:
         token=employee_token,
         json_body={"session_id": session_id, "message": "北辰科技年假如何计算？"},
     )
-    _require_live_chat(status, policy_chat, "policy question")
+    _require_live_chat(status, "policy question")
     _require_cited_answer(policy_chat)
     _show_summary(source_ids=[source.get("source_id") for source in policy_chat["sources"]], status="cited")
 
@@ -219,7 +224,7 @@ def main() -> int:
             "message": "我在海外派驻期间需要申请年假例外，请转 HR 人工处理。",
         },
     )
-    _require_live_chat(status, exception_chat, "exception request")
+    _require_live_chat(status, "exception request")
     draft_id = _require_pending_draft(exception_chat)
     _show_summary(draft_id=draft_id, status="pending")
 

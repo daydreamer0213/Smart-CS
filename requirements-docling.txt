@@ -1,2 +1,2 @@
-# Optional advanced PDF parsing with local Docling models.
-docling>=2.0.0
+# Optional PDF parsing with local Docling models.
+docling-slim[format-pdf,models-local]>=2.113,<2.114

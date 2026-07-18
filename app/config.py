@@ -1,6 +1,10 @@
 """Application configuration loaded from .env via pydantic-settings."""
 
-from pydantic import Field, field_validator
+import ntpath
+import posixpath
+from typing import Literal
+
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,13 +29,14 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_dir: str = "logs"
 
-    # Optional local document parser. Keep downloaded artifacts off the system drive.
+    # Optional local document parser. Keep downloaded artifacts in one data root.
+    parser_data_root: str = "D:/DevData/smartcs"
     docling_artifacts_path: str = "D:/DevData/smartcs/docling/artifacts"
     hf_home: str = "D:/DevData/smartcs/huggingface"
     torch_home: str = "D:/DevData/smartcs/torch"
     tesseract_cmd: str = "D:/DevData/smartcs/tesseract/tesseract.exe"
     tessdata_prefix: str = "D:/DevData/smartcs/tesseract/tessdata/"
-    docling_device: str = "cpu"
+    docling_device: Literal["cpu"] = "cpu"
     docling_num_threads: int = Field(default=4, ge=1)
 
     # Agent
@@ -45,17 +50,39 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
 
-    @field_validator(
-        "docling_artifacts_path",
-        "hf_home",
-        "torch_home",
-        "tesseract_cmd",
-        "tessdata_prefix",
-    )
+    @field_validator("tessdata_prefix")
     @classmethod
-    def document_parser_paths_must_use_d_drive(cls, value: str) -> str:
-        if not value.replace("\\", "/").lower().startswith("d:/"):
-            raise ValueError("document parser paths must be on D:")
-        return value
+    def normalize_tessdata_prefix(cls, value: str) -> str:
+        separator = "\\" if "\\" in value and "/" not in value else "/"
+        return f"{value.rstrip('/\\')}" + separator
+
+    @staticmethod
+    def _canonical_parser_path(value: str):
+        path_module = ntpath if ntpath.splitdrive(value)[0] or "\\" in value else posixpath
+        normalized = path_module.normcase(path_module.normpath(value))
+        if not path_module.isabs(normalized):
+            raise ValueError("parser_data_root and parser paths must be absolute")
+        return path_module, normalized
+
+    @model_validator(mode="after")
+    def document_parser_paths_must_be_within_data_root(self):
+        root_module, root = self._canonical_parser_path(self.parser_data_root)
+        for field_name in (
+            "docling_artifacts_path",
+            "hf_home",
+            "torch_home",
+            "tesseract_cmd",
+            "tessdata_prefix",
+        ):
+            path_module, path = self._canonical_parser_path(getattr(self, field_name))
+            if path_module is not root_module:
+                raise ValueError(f"{field_name} must be contained in parser_data_root")
+            try:
+                contained = path_module.commonpath((root, path)) == root
+            except ValueError:
+                contained = False
+            if not contained:
+                raise ValueError(f"{field_name} must be contained in parser_data_root")
+        return self
 
 settings = Settings()

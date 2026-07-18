@@ -1,8 +1,12 @@
 # Docling and Tesseract Setup
 
-Docling and Tesseract are optional local dependencies. Keep package caches,
-model artifacts, and OCR language data on `D:`. Do not add this optional
-dependency to `requirements.txt`.
+Docling and Tesseract are optional local dependencies. The supported local
+Windows profile keeps package caches, model artifacts, and OCR language data
+under `D:\DevData\smartcs`. Do not add this optional dependency to
+`requirements.txt`.
+
+SmartCS uses the configured Tesseract CLI only for OCR. Do not enable an
+automatic or alternate OCR backend.
 
 ## Set the local paths
 
@@ -11,6 +15,7 @@ environment variables for the current shell.
 
 ```powershell
 $env:PIP_CACHE_DIR = 'D:\DevData\smartcs\pip'
+$env:PARSER_DATA_ROOT = 'D:\DevData\smartcs'
 $env:DOCLING_ARTIFACTS_PATH = 'D:\DevData\smartcs\docling\artifacts'
 $env:HF_HOME = 'D:\DevData\smartcs\huggingface'
 $env:TORCH_HOME = 'D:\DevData\smartcs\torch'
@@ -23,8 +28,11 @@ $env:OMP_NUM_THREADS = '4'
 New-Item -ItemType Directory -Force $env:PIP_CACHE_DIR, $env:DOCLING_ARTIFACTS_PATH, $env:HF_HOME, $env:TORCH_HOME, $env:TESSDATA_PREFIX | Out-Null
 ```
 
-`TESSDATA_PREFIX` must end in a slash. Copy the same values into the local
-`.env` only when enabling this optional parser; do not commit that file.
+`TESSDATA_PREFIX` is normalized to end in a slash. All parser paths must be
+children of `PARSER_DATA_ROOT`; the default therefore confines them to
+`D:\DevData\smartcs`. A non-Windows deployment may set an explicit absolute
+root and matching child paths. Copy the same values into the local `.env` only
+when enabling this optional parser; do not commit that file.
 
 ## Inspect and install Docling
 
@@ -41,9 +49,9 @@ After reviewing the resolver output, install the optional package:
 & 'D:\2026.07.09\conda-envs\smart-cs\python.exe' -m pip install -r requirements-docling.txt
 ```
 
-Docling's base package includes its standard PDF and local-model pipeline. Do
-not add OCR extras unless the parser adapter later requires a different OCR
-engine.
+The optional requirement is deliberately limited to Docling PDF support and
+local models. It does not select an OCR backend; OCR remains the configured
+Tesseract CLI only.
 
 ## Prefetch local models
 
@@ -61,18 +69,20 @@ pipeline options.
 ## Install and verify Tesseract
 
 Install a Windows Tesseract distribution into
-`D:\DevData\smartcs\tesseract` and place `chi_sim.traineddata` under
-`D:\DevData\smartcs\tesseract\tessdata`. Then verify both the executable and
-Simplified Chinese language data:
+`D:\DevData\smartcs\tesseract` and place both `eng.traineddata` and
+`chi_sim.traineddata` under `D:\DevData\smartcs\tesseract\tessdata`. Then
+verify the executable and require both languages:
 
 ```powershell
 & $env:TESSERACT_CMD --version
-& $env:TESSERACT_CMD --list-langs
+$languages = & $env:TESSERACT_CMD --tessdata-dir $env:TESSDATA_PREFIX --list-langs
+$missing = @('eng', 'chi_sim') | Where-Object { $_ -notin $languages }
+if ($missing) { throw "Missing Tesseract languages: $($missing -join ', ')" }
 ```
 
-The second command must list `chi_sim`. Keep the executable and `tessdata`
-directory together on `D:`; do not rely on a system-drive installation or a
-machine-wide `PATH` entry.
+The language check must succeed for both `eng` and `chi_sim`. Keep the
+executable and `tessdata` directory together under `PARSER_DATA_ROOT`; do not
+rely on a system-drive installation or a machine-wide `PATH` entry.
 
 ## Audit cache locations before parsing
 
@@ -81,12 +91,13 @@ to `D:` and inspect common system-drive cache locations for unexpected new
 Docling, Hugging Face, Torch, or pip data:
 
 ```powershell
-@($env:PIP_CACHE_DIR, $env:DOCLING_ARTIFACTS_PATH, $env:HF_HOME, $env:TORCH_HOME, $env:TESSDATA_PREFIX) |
+@($env:PIP_CACHE_DIR, $env:PARSER_DATA_ROOT, $env:DOCLING_ARTIFACTS_PATH, $env:HF_HOME, $env:TORCH_HOME, $env:TESSDATA_PREFIX) |
     ForEach-Object { Get-Item $_ | Select-Object FullName }
 
 Get-ChildItem -Force "$env:LOCALAPPDATA\pip\Cache", "$env:USERPROFILE\.cache\huggingface", "$env:USERPROFILE\.cache\docling" -ErrorAction SilentlyContinue |
     Select-Object FullName
 ```
 
-If the audit finds newly created parser data outside `D:`, stop before parsing
-documents and correct the environment variables or artifact target.
+For the supported Windows profile, if the audit finds newly created parser
+data outside `D:\DevData\smartcs`, stop before parsing documents and correct
+the environment variables or artifact target.

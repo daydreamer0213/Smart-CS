@@ -4,9 +4,10 @@ from pydantic import ValidationError
 from app.config import Settings
 
 
-def test_document_parser_defaults_keep_large_artifacts_on_d_drive():
+def test_document_parser_defaults_keep_large_artifacts_under_d_devdata_root():
     settings = Settings(_env_file=None)
 
+    assert settings.parser_data_root == "D:/DevData/smartcs"
     assert settings.docling_artifacts_path == "D:/DevData/smartcs/docling/artifacts"
     assert settings.hf_home == "D:/DevData/smartcs/huggingface"
     assert settings.torch_home == "D:/DevData/smartcs/torch"
@@ -15,38 +16,55 @@ def test_document_parser_defaults_keep_large_artifacts_on_d_drive():
     assert settings.docling_device == "cpu"
     assert settings.docling_num_threads == 4
 
-    for path in (
-        settings.docling_artifacts_path,
-        settings.hf_home,
-        settings.torch_home,
-        settings.tesseract_cmd,
-        settings.tessdata_prefix,
-    ):
-        assert path.replace("\\", "/").lower().startswith("d:/")
 
-
-def test_document_parser_settings_allow_d_drive_environment_overrides(monkeypatch):
-    monkeypatch.setenv("DOCLING_ARTIFACTS_PATH", "D:/ParserData/artifacts")
-    monkeypatch.setenv("HF_HOME", "D:/ParserData/huggingface")
-    monkeypatch.setenv("TORCH_HOME", "D:/ParserData/torch")
-    monkeypatch.setenv("TESSERACT_CMD", "D:/ParserData/tesseract/tesseract.exe")
-    monkeypatch.setenv("TESSDATA_PREFIX", "D:/ParserData/tesseract/tessdata/")
-    monkeypatch.setenv("DOCLING_DEVICE", "cpu")
-    monkeypatch.setenv("DOCLING_NUM_THREADS", "2")
+def test_document_parser_allows_child_overrides_under_default_root(monkeypatch):
+    monkeypatch.setenv("DOCLING_ARTIFACTS_PATH", "D:/DevData/smartcs/custom/artifacts")
+    monkeypatch.setenv("HF_HOME", "D:/DevData/smartcs/custom/huggingface")
+    monkeypatch.setenv("TORCH_HOME", "D:/DevData/smartcs/custom/torch")
+    monkeypatch.setenv("TESSERACT_CMD", "D:/DevData/smartcs/custom/tesseract/tesseract.exe")
+    monkeypatch.setenv("TESSDATA_PREFIX", "D:/DevData/smartcs/custom/tesseract/tessdata")
 
     settings = Settings(_env_file=None)
 
-    assert settings.docling_artifacts_path == "D:/ParserData/artifacts"
-    assert settings.hf_home == "D:/ParserData/huggingface"
-    assert settings.torch_home == "D:/ParserData/torch"
-    assert settings.tesseract_cmd == "D:/ParserData/tesseract/tesseract.exe"
-    assert settings.tessdata_prefix == "D:/ParserData/tesseract/tessdata/"
-    assert settings.docling_device == "cpu"
-    assert settings.docling_num_threads == 2
+    assert settings.docling_artifacts_path == "D:/DevData/smartcs/custom/artifacts"
+    assert settings.hf_home == "D:/DevData/smartcs/custom/huggingface"
+    assert settings.torch_home == "D:/DevData/smartcs/custom/torch"
+    assert settings.tesseract_cmd == "D:/DevData/smartcs/custom/tesseract/tesseract.exe"
+    assert settings.tessdata_prefix == "D:/DevData/smartcs/custom/tesseract/tessdata/"
 
 
-def test_document_parser_rejects_paths_outside_d_drive(monkeypatch):
-    monkeypatch.setenv("DOCLING_ARTIFACTS_PATH", "C:/temp/docling")
+@pytest.mark.parametrize(
+    "path",
+    [
+        "C:/ParserData/artifacts",
+        "D:/ParserData/artifacts",
+        "D:/DevData/smartcs/docling/../../escape",
+        "D:/DevData/smartcs-sibling/artifacts",
+    ],
+)
+def test_document_parser_rejects_paths_outside_default_root(monkeypatch, path):
+    monkeypatch.setenv("DOCLING_ARTIFACTS_PATH", path)
 
-    with pytest.raises(ValidationError, match="D:"):
+    with pytest.raises(ValidationError, match="parser_data_root"):
         Settings(_env_file=None)
+
+
+def test_document_parser_rejects_non_cpu_device(monkeypatch):
+    monkeypatch.setenv("DOCLING_DEVICE", "cuda")
+
+    with pytest.raises(ValidationError, match="cpu"):
+        Settings(_env_file=None)
+
+
+def test_document_parser_allows_an_explicit_portable_data_root(monkeypatch):
+    monkeypatch.setenv("PARSER_DATA_ROOT", "/var/lib/smartcs")
+    monkeypatch.setenv("DOCLING_ARTIFACTS_PATH", "/var/lib/smartcs/docling/artifacts")
+    monkeypatch.setenv("HF_HOME", "/var/lib/smartcs/huggingface")
+    monkeypatch.setenv("TORCH_HOME", "/var/lib/smartcs/torch")
+    monkeypatch.setenv("TESSERACT_CMD", "/var/lib/smartcs/tesseract/tesseract")
+    monkeypatch.setenv("TESSDATA_PREFIX", "/var/lib/smartcs/tesseract/tessdata")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.parser_data_root == "/var/lib/smartcs"
+    assert settings.tessdata_prefix == "/var/lib/smartcs/tesseract/tessdata/"

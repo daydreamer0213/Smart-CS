@@ -1,234 +1,92 @@
 # SmartCS
 
-SmartCS is a multi-tenant enterprise employee Agent sample built with Python,
-FastAPI, RAG, controlled CRM operations, JWT authentication, and test coverage.
+SmartCS 是一个面向企业内部员工的多租户 HR 服务 Agent 后端工程样板。它的主线不是“聊天”，而是把制度知识问答、来源引用、例外转人工、员工确认、HR 处理和租户边界放进同一条可测试服务链路。
 
-It is positioned as an enterprise AI application engineering sample, not a
-simple FAQ chatbot. The important question it answers is:
+## 核心闭环
 
-> How do we make one enterprise Agent safely serve employees across knowledge
-> questions and controlled business actions, where permissions, confirmation,
-> auditability, and tests matter as much as the chat response?
+1. 员工通过 JWT 进入所属租户。
+2. HR Agent 从本人可访问的制度文档中检索，并在回答中提供 `[source:<id>]` 引用。
+3. 制度没有覆盖、信息不足或员工明确要求人工处理时，Agent 只创建待确认草稿。
+4. 员工显式确认后，后端以幂等键创建正式 HR 支持请求，并记录最小审计状态。
+5. owner/admin 指派或解决请求；员工只能查看自己的状态。
+6. 文档、检索、工单和 API 都按租户与角色做后端边界校验。
 
-## Why It Matters
+## 项目价值
 
-For companies, the value is not "a bot can chat." The value is controlled AI
-workflow around company knowledge:
+这不是把 LLM 接到 FAQ 上，而是演示企业 AI 应用的受控落地：身份先行、知识有受众、回答可溯源、例外可转人工、业务状态由后端确认和治理。它适合作为 Python AI 后端、RAG 与 Agent 应用工程能力的作品证明。
 
-- Multi-tenant boundary: each company or business unit has isolated knowledge,
-  documents, admin access, and API keys.
-- Governed RAG: FAQ entries and imported document chunks are retrieved through
-  the same tenant-scoped vector + BM25 path.
-- One authenticated enterprise assistant: it dynamically exposes corporate
-  knowledge and CRM Skills based on the current user role.
-- It keeps the latest ten turns per authenticated employee session; knowledge
-  entries may optionally be restricted to specific roles (empty means all staff).
-- Controlled CRM workflow: the assistant may prepare a lead/task change, but
-  only an explicit user confirmation performs the write.
-- Primary-boundary hardening: the former unauthenticated `/chat` route is not
-  mounted; employee traffic enters through JWT-protected `/assistant`.
-- Operational backend: admins can manage documents, knowledge, analytics, and
-  tenant-scoped access.
-- Engineering evidence: pytest coverage protects document retrieval, BM25
-  incremental indexing, primary-route rate limiting, tenant isolation, and JWT auth.
+## 技术栈
 
-## Core Capabilities
+- FastAPI、SQLAlchemy、Alembic、SQLite
+- JWT 多租户认证与角色授权
+- ChromaDB 向量检索与 BM25 混合检索
+- 文档导入：txt、md、pdf、docx、xlsx
+- LangGraph HR Agent 与受限工具调用
+- pytest 自动化回归测试
 
-- FastAPI backend with tenant-aware routes.
-- SQLite + SQLAlchemy models for tenants, knowledge, documents, conversations,
-  analytics, admin API keys, and users.
-- ChromaDB vector storage and BM25 retrieval.
-- Document import for txt, md, pdf, docx, and xlsx.
-- RAG retrieval with cache layers.
-- Tool-calling enterprise agent with role-scoped knowledge and CRM Skills.
-- Structured operational logs for requests, Agent lifecycle, tool calls, and
-  controlled-write outcomes; logs contain identifiers and error codes, not
-  business payloads.
-- Admin APIs for knowledge, documents, and analytics.
-- JWT authentication:
-  - owner self-registers and creates a tenant.
-  - owner/admin can create tenant users.
-  - employee receives knowledge access only; agent receives CRM access too.
-  - Bearer JWT and `X-Admin-Key` both enforce tenant boundaries.
-- Local CRM sales-assistant MVP: customer overview, lead/task action drafts,
-  explicit confirmation, role checks, duplicate-lead protection, audit logs,
-  and idempotent confirmation. It uses fictional local SQLite data only.
-- Alembic migration for the `users` table.
-- 100+ automated tests.
-
-## Architecture
+## 架构
 
 ```mermaid
 flowchart LR
-    Employee["Authenticated Employee"] --> Assistant["Assistant Chat API"]
-    Assistant --> Agent["Enterprise Agent"]
-    Agent --> Knowledge["Enterprise Knowledge Skill"]
-    Agent --> CRM["CRM Read / Draft Skill"]
-    Knowledge --> RAG["BM25 + Vector Store"]
-    RAG --> KB["HR / Sales / Finance / IT Documents"]
-    CRM --> Confirm["Explicit Confirmation"]
-    Confirm --> Audit["CRM Write + Audit Log"]
-
-    Admin["Tenant Owner/Admin"] --> Auth["JWT Auth"]
-    Auth --> AdminAPI["Admin APIs"]
-    AdminAPI --> Docs["Document Import"]
-    AdminAPI --> KB
-    AdminAPI --> Analytics["Analytics"]
-
-    Script["M2M Script"] --> ApiKey["X-Admin-Key"]
-    ApiKey --> AdminAPI
+    Employee["企业员工"] --> JWT["JWT 租户与角色校验"]
+    JWT --> Assistant["HR Agent API"]
+    Assistant --> Retrieval["受众过滤的 BM25 + Vector 检索"]
+    Retrieval --> Documents["制度文档与来源引用"]
+    Assistant --> Draft["例外转人工草稿"]
+    Draft --> Confirm["员工显式确认 + 幂等建单"]
+    Confirm --> Handoff["HR Support Handoff"]
+    HRAdmin["HR owner/admin"] --> Handoff
+    Handoff --> Audit["最小审计状态"]
 ```
 
-## Local Environment
+## 角色边界
 
-Current local project root:
+| 角色 | 主要能力 |
+| --- | --- |
+| employee | 查询本人可见制度、确认草稿、查看自己的支持请求 |
+| admin | 管理本租户用户与文档、指派或解决 HR 支持请求 |
+| owner | 创建租户并拥有本租户管理能力 |
 
-```powershell
+所有读取和状态变更都在后端校验租户与角色，而不是依赖前端隐藏按钮。
+
+## 本地环境
+
+当前项目根目录：
+
+```text
 D:\2026.07.09\AAA\smart-cs
 ```
 
-Recommended Python:
+推荐 Python：
 
-```powershell
+```text
 D:\2026.07.09\conda-envs\smart-cs\python.exe
 ```
 
-Large local caches should stay on D drive:
+运行实时演示前，在 `.env` 配置 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、`EMBEDDING_API_KEY`、`EMBEDDING_BASE_URL` 和 `EMBEDDING_MODEL`。不要把这些值提交、打印或贴进截图。
 
-```powershell
-D:\2026.07.09\smartcs-cache\pip
-D:\2026.07.09\smartcs-cache\huggingface
-D:\2026.07.09\smartcs-cache\torch
-```
-
-## Run
+## 测试
 
 ```powershell
 cd D:\2026.07.09\AAA\smart-cs
-
-& D:\2026.07.09\conda-envs\smart-cs\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+& D:\2026.07.09\conda-envs\smart-cs\python.exe -m pytest tests -q
 ```
 
-Health check:
+## 实时演示
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health
-```
+完整的两终端演示、临时数据库位置、模型失败说明和排障方法见：[本地 HR Agent 演示手册](docs/operations/local-hr-agent-demo.md)。
 
-Expected shape:
+该演示会创建虚构的“北辰科技”租户及临时用户，依次展示文档上传、带来源引用的制度回答、待确认转人工、正式建单、HR 指派/解决、员工查状态与跨租户 `403`。若模型或提供方返回 `503`，演示脚本会失败退出；这代表配置、网络或额度问题，不是成功结果。
 
-```json
-{"status":"ok","version":"0.1.0","database":"ok","chromadb":"ok"}
-```
+## 面试交付材料
 
-## Test
+- [3 分钟演示稿](docs/interview/SMARTCS_DEMO_SCRIPT.md)
+- [面试深聊要点](docs/interview/SMARTCS_INTERVIEW.md)
+- [求职交付包](docs/interview/SMARTCS_DELIVERY_PACKAGE.md)
+- [最终项目表达稿](docs/interview/SMARTCS_FINAL_PITCH.md)
 
-```powershell
-& D:\2026.07.09\conda-envs\smart-cs\python.exe -m pytest tests/ -v
-```
+## 范围边界
 
-Run the test command above before each delivery. The focused enterprise-Agent
-regression suite covers role-scoped Skills, history isolation, knowledge
-audiences, controlled CRM writes, security, and streaming behavior.
+SmartCS 是企业 AI 应用工程样板，不宣称已经是上线运营的商业 HR SaaS。当前未实现 SSO/SCIM、真实 HRIS 或工单系统适配、通知与 SLA、完整链路追踪指标、CI/CD 及生产密钥治理。
 
-## Demo
-
-After logging in, open `/static/assistant.html` for the unified employee-Agent
-demo. The first-run `demo` tenant receives one fictional customer record;
-register an owner, sales agent, or employee account through the auth API before
-logging in.
-
-`/api/v1/{tenant_slug}/assistant/*` is the employee-Agent application surface.
-The unauthenticated legacy `/chat` route is not mounted. `/business` remains a
-JWT-protected transition API for controlled-write regression coverage, without
-a standalone frontend entry.
-
-For a fully local demo that does not call external embedding APIs, start the app
-with `EMBEDDING_PROVIDER=hash`. To avoid mixing demo vectors with your normal
-local data, use a temporary SQLite database and Chroma directory:
-
-```powershell
-$demoRoot="D:/2026.07.09/smartcs-cache/demo-" + (Get-Date -Format "yyyyMMdd-HHmmss")
-New-Item -ItemType Directory -Force -Path $demoRoot | Out-Null
-$env:EMBEDDING_PROVIDER="hash"
-$env:DATABASE_URL="sqlite:///$demoRoot/smartcs-demo.db"
-$env:CHROMA_PERSIST_DIR="$demoRoot/chroma"
-$env:LOG_DIR="$demoRoot/logs"
-& D:\2026.07.09\conda-envs\smart-cs\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-Then run:
-
-```powershell
-& D:\2026.07.09\conda-envs\smart-cs\python.exe scripts\demo_enterprise_flow.py
-```
-
-The demo script shows:
-
-- owner tenant registration.
-- JWT login/auth flow.
-- authorized sales-agent and knowledge-only employee creation.
-- agent forbidden from admin access.
-- cross-tenant access denied.
-- knowledge creation and admin listing.
-- document upload plus FAQ/document-chunk unified retrieval regression coverage.
-- role-scoped unified assistant route and backend analytics view.
-
-Full LLM answer quality still depends on `.env`, but the `hash` embedding mode
-lets the governance, knowledge, and document-import demo run without consuming
-embedding quota.
-
-Latest local demo result:
-
-```text
-owner register: 201
-agent creation: 201
-employee creation: 201
-agent admin access: 403
-knowledge creation: 201
-document upload: 201, status=ready, chunk_count=1
-assistant route: 200 when LLM is configured, 503 is acceptable when LLM key is absent
-knowledge/documents/analytics backend views: 200
-cross-tenant admin access: 403
-```
-
-## Interview Summary
-
-Resume bullet:
-
-> Built a multi-tenant enterprise employee Agent with FastAPI, enterprise RAG,
-> role-scoped CRM Skills, confirmation-gated writes, JWT tenant access control,
-> audit logs, and automated tests.
-
-Two-minute explanation:
-
-> SmartCS is not just a chat API. I treated it as one enterprise employee Agent:
-> users first authenticate, then the Agent receives only the Skills their role
-> permits. All employees can query enterprise knowledge; sales users can query
-> CRM facts and prepare business changes; confirmed changes are revalidated,
-> idempotent, and audited. The JWT work enforces tenant boundaries before any
-> Skill is selected or data is read.
-
-See [docs/interview/SMARTCS_INTERVIEW.md](docs/interview/SMARTCS_INTERVIEW.md)
-for resume bullets and interview talking points. See
-[docs/interview/SMARTCS_DELIVERY_PACKAGE.md](docs/interview/SMARTCS_DELIVERY_PACKAGE.md)
-for the final job-search delivery package, and see
-[docs/interview/SMARTCS_FINAL_PITCH.md](docs/interview/SMARTCS_FINAL_PITCH.md)
-for role-specific resume and interview wording. See
-[docs/interview/SMARTCS_DEMO_SCRIPT.md](docs/interview/SMARTCS_DEMO_SCRIPT.md)
-for a short Chinese demo script.
-
-## Scope Boundaries
-
-This project intentionally does not claim to be a finished commercial SaaS.
-Current focus is engineering proof:
-
-- backend AI application architecture.
-- RAG and document import.
-- role-scoped knowledge and CRM Skills.
-- confirmation-gated business writes and auditability.
-- tenant governance and authentication.
-- practical tests and local reproducibility.
-
-Future production work would include invitation flows, production secret
-management, deployment hardening, CI/CD, and stronger observability.
+`/business/*` 是保留用于历史回归覆盖的 JWT 保护 Sales Copilot Lab，不是主路径，也不在本项目的面试演示中作为核心价值呈现。

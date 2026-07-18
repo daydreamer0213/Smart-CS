@@ -1,90 +1,45 @@
 # SmartCS 求职交付包
 
-## 项目一句话
+## 一句话定位
 
-SmartCS 是一个多租户企业员工 Agent 后端样板：员工登录后，系统按角色开放企业知识检索和 CRM Skills；AI 可以准备业务操作，但真正写入必须经过显式确认、重新校验、幂等处理和审计记录。
+SmartCS 是面向企业内部员工的多租户 HR 服务 Agent 后端工程样板：以 JWT、受众文档检索、来源引用、员工确认和 HR 支持生命周期，把制度问答放进可治理的服务闭环。
 
 ## 推荐简历 bullet
 
-主 bullet：
+- 构建 FastAPI 多租户 HR 服务 Agent 后端，完成 JWT 租户边界、角色化文档权限、文档导入及 BM25 + 向量检索的制度问答。
+- 将例外处理设计为“Agent 草稿、员工确认、幂等建单、HR 指派/解决、员工查状态”的受控生命周期，避免模型直接变更业务状态。
+- 为认证、隔离、受众、检索降级和转人工生命周期补充 pytest 回归，并交付基于虚构数据的本地实时演示脚本。
 
-> 独立构建多租户企业员工 Agent 后端 SmartCS，基于 FastAPI、SQLAlchemy、RAG、LangGraph、JWT 和本地 CRM demo，实现角色化知识检索、CRM 查询、业务操作草稿、确认后写入、审计日志、租户隔离和自动化测试。
+## 可展示的企业价值
 
-可拆成 3 条：
+- **员工自助**：员工查询年假、报销、入职等制度时得到可追溯来源，而非无依据回答。
+- **例外收口**：制度未覆盖或员工要求人工时，系统把问题交给 HR 队列，而不是编造规则。
+- **治理边界**：租户、角色与文档受众在后端校验，跨租户访问被拒绝。
+- **可运营状态**：员工能看到自己的请求，HR 能指派和解决，状态变化可审计。
 
-- 构建 FastAPI 多租户企业 Agent 后端，覆盖租户、用户、角色、知识库、文档、会话、后台分析、JWT 和 API Key 管理。
-- 实现企业 RAG + 角色化 Skills，打通 FAQ 与文档分块的 ChromaDB 向量检索和 BM25 检索，并通过 JWT 主入口与租户限流约束访问边界。
-- 设计受控 CRM 写操作流程，AI 只生成线索/任务操作草稿，用户确认后才写入，并支持权限复核、幂等确认、重复线索保护和审计日志。
+## 现场演示路线
 
-## 30 秒讲法
+1. 运行 `/health`，确认服务返回 `200`。
+2. 创建虚构北辰科技租户及 owner、HR admin、employee 身份。
+3. 上传 employee 受众的年假制度文档。
+4. employee 得到带 `[source:<id>]` 的制度回答。
+5. employee 提出海外派驻例外，看到 `pending_handoff` 草稿。
+6. employee 确认后得到 `open` 的正式请求。
+7. HR admin 指派并解决；employee 在 `/hr-support/me` 查看 `resolved`。
+8. A 租户 employee 访问 B 租户接口得到 `403`。
 
-SmartCS 不是普通聊天机器人，而是一个企业员工 Agent 后端样板。员工先登录，系统根据角色开放不同 Skills：普通员工只能查企业知识，销售或管理员可以查 CRM 并准备业务操作。AI 不会直接改数据，只能生成草稿，用户确认后后端才重新校验并写入，同时留下审计记录。这个项目重点展示的是企业 AI 应用落地时的权限、数据、工具调用、确认和测试闭环。
+详细命令见：[本地 HR Agent 演示手册](../operations/local-hr-agent-demo.md)。模型返回 `503` 时，演示必须视为失败并排查配置、网络或额度。
 
-## 2 分钟讲法
+## 项目边界
 
-我把 SmartCS 从“客服问答”收束成“企业员工 Agent”。真实企业不只关心模型能不能回答，还关心员工身份、租户隔离、角色权限、业务写操作是否可控、失败是否可追踪。
+- 当前目标是企业 AI 应用工程证明，不是完整 HRIS 或商业 SaaS。
+- 未实现 SSO/SCIM、真实 HRIS/工单系统适配、通知与 SLA、生产 tracing/metrics、CI/CD 与生产密钥治理。
+- `/business/*` 仅是保留用于历史回归覆盖的 Sales Copilot Lab，不是主路径或面试主卖点。
 
-后端使用 FastAPI 和 SQLAlchemy，核心对象包括租户、用户、知识库、文档、会话、CRM 客户/线索/任务、操作草稿和审计日志。认证上有 JWT 和 API Key 两条路径，owner 可以创建租户，owner/admin 可以创建同租户用户，employee 只能使用知识 Skill，agent/admin/owner 可以使用 CRM Skill。
+## 交付材料
 
-AI 侧保留 RAG 能力：文档导入、分块、向量检索、BM25 和后台知识治理。Agent 侧通过工具调用把知识检索和 CRM 查询接起来。对于写操作，我没有让 LLM 直接写数据库，而是设计成“生成草稿 -> 用户确认 -> 后端重新校验 -> 幂等写入 -> 审计记录”，这样更接近企业系统的安全要求。
-
-## 企业价值
-
-- 内部员工助手：员工查制度、流程、字段说明和企业知识。
-- 销售助手：销售查询客户概览、联系人、线索、商机和跟进任务。
-- 受控业务操作：AI 准备创建线索、更新线索、创建跟进任务，人确认后才写入。
-- 多租户 SaaS：不同企业、部门或客户的数据和知识库互相隔离。
-- AI 治理样板：展示如何把 Agent 放进可控、可测、可审计的后端系统。
-
-## 现场演示路径
-
-启动离线演示实例：
-
-```powershell
-cd D:\2026.07.09\AAA\smart-cs
-
-$demoRoot="D:/2026.07.09/smartcs-cache/demo-" + (Get-Date -Format "yyyyMMdd-HHmmss")
-New-Item -ItemType Directory -Force -Path $demoRoot | Out-Null
-$env:EMBEDDING_PROVIDER="hash"
-$env:DATABASE_URL="sqlite:///$demoRoot/smartcs-demo.db"
-$env:CHROMA_PERSIST_DIR="$demoRoot/chroma"
-$env:LOG_DIR="$demoRoot/logs"
-
-& D:\2026.07.09\conda-envs\smart-cs\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-另开终端运行：
-
-```powershell
-cd D:\2026.07.09\AAA\smart-cs
-$env:SMARTCS_BASE_URL="http://127.0.0.1:8000"
-& D:\2026.07.09\conda-envs\smart-cs\python.exe scripts\demo_enterprise_flow.py
-```
-
-演示重点：
-
-1. `/health` 正常，数据库和 Chroma 可用。
-2. owner 注册租户。
-3. owner 创建 agent 和 employee。
-4. agent 访问后台被拒，说明角色边界生效。
-5. owner 创建企业知识并上传文档。
-6. employee 调用统一 `/assistant/chat`，只拿到知识 Skill。
-7. 后台查看知识、文档、分析。
-8. 跨租户访问被拒。
-9. 打开 `/static/assistant.html` 展示单一员工 Agent UI。
-
-## 当前边界
-
-- 这不是已经上线运营的商业 SaaS，而是求职用工程样板。
-- 本地 CRM 使用 fictional SQLite demo data，不是通用 CRM 集成平台。
-- 离线 hash embedding 用于稳定演示，不代表生产 embedding 质量。
-- 完整回答质量取决于真实 LLM / embedding 配置和业务文档质量。
-- 未认证旧 `/chat` 路由已下线；主展示入口是 `/assistant`，`/business` 仅保留 JWT 保护的受控写入过渡接口。
-
-## 相关文档
-
-- `README.md`：项目总览。
-- `docs/interview/SMARTCS_FINAL_PITCH.md`：最终简历和面试表达稿。
-- `docs/interview/SMARTCS_INTERVIEW.md`：面试深聊话术。
-- `docs/interview/SMARTCS_DEMO_SCRIPT.md`：3 分钟现场演示稿。
-- `scripts/demo_enterprise_flow.py`：可运行演示脚本。
+- [项目总览](../../README.md)
+- [3 分钟演示稿](SMARTCS_DEMO_SCRIPT.md)
+- [面试深聊要点](SMARTCS_INTERVIEW.md)
+- [最终项目表达稿](SMARTCS_FINAL_PITCH.md)
+- [本地 HR Agent 演示手册](../operations/local-hr-agent-demo.md)

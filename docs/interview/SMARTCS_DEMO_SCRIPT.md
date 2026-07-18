@@ -2,95 +2,46 @@
 
 ## 演示定位
 
-SmartCS 不是普通 FAQ 聊天机器人，而是一个企业员工 Agent 后端样板：
+SmartCS 是面向企业内部员工的多租户 HR 服务 Agent 后端样板。我要展示的不是模型“会不会聊天”，而是它能否在租户、身份、文档权限和人工处理边界内完成一个可复现闭环。
 
-- 多租户企业知识库。
-- RAG 文档导入和知识治理。
-- 员工登录后的统一 Agent 入口。
-- 按角色开放知识 / CRM Skills。
-- CRM 写操作先生成草稿，确认后才写入。
-- JWT / API Key 身份边界。
-- 后台管理、审计和自动化测试。
+启动方式见：[本地 HR Agent 演示手册](../operations/local-hr-agent-demo.md)。演示脚本使用虚构的北辰科技数据；运行时生成临时凭据，不显示任何密钥或密码。
 
-一句话讲法：
+## 三分钟讲解顺序
 
-> 这个项目证明我能把 Agent 放进企业后端工程里：员工先认证，Agent 按角色拿到工具，业务写入必须确认并审计。
+1. **服务可用，约 15 秒**
+   - 运行脚本先请求 `/health`，返回 `200`。
+   - 这说明当前实例、数据库与基础依赖可以进入演示，而不是只展示静态截图。
 
-## 演示命令
+2. **身份和租户，约 20 秒**
+   - 脚本创建北辰科技 HR 租户，以及 owner、HR admin、employee 三个 JWT 身份。
+   - 后端在每个路由上带着租户和角色校验，员工身份不是前端标签。
 
-启动一个不污染正式数据的离线演示实例：
+3. **受众文档与制度回答，约 35 秒**
+   - owner 上传一份仅对 employee 受众开放的虚构年假制度文档，接口返回 `201` 和 `ready`。
+   - employee 询问“北辰科技年假如何计算？”，HR Agent 返回 `200`，并且回答和 `sources` 中都有 `[source:<id>]`。
+   - 这证明回答来自员工有权读取的文档，而不是把制度写死在提示词里。
 
-```powershell
-cd D:\2026.07.09\AAA\smart-cs
+4. **例外转人工，约 35 秒**
+   - employee 提出“海外派驻期间的年假例外，请转 HR 人工处理”。
+   - 当制度没有覆盖例外时，Agent 不编造规则，而是返回 `pending_handoff` 草稿。
+   - 此时没有正式工单，员工仍掌握是否提交的决定权。
 
-$demoRoot="D:/2026.07.09/smartcs-cache/demo-" + (Get-Date -Format "yyyyMMdd-HHmmss")
-New-Item -ItemType Directory -Force -Path $demoRoot | Out-Null
-$env:EMBEDDING_PROVIDER="hash"
-$env:DATABASE_URL="sqlite:///$demoRoot/smartcs-demo.db"
-$env:CHROMA_PERSIST_DIR="$demoRoot/chroma"
-$env:LOG_DIR="$demoRoot/logs"
+5. **确认后建单与 HR 生命周期，约 45 秒**
+   - employee 调用确认接口后，草稿变成 `open` 的正式 HR 支持请求；接口带幂等键，重复确认不会产生重复工单。
+   - HR admin 在管理队列中找到它，先设为 `assigned`，再设为 `resolved`。
+   - 这个状态变化由后端路由和角色校验控制，不由模型直接改库。
 
-& D:\2026.07.09\conda-envs\smart-cs\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
+6. **员工可见状态与隔离，约 30 秒**
+   - employee 调用 `/hr-support/me`，看到自己这张请求已经 `resolved`。
+   - 脚本再创建另一个虚构租户，拿北辰 employee 的 JWT 访问对方租户，得到 `403`。
+   - 因此，租户隔离是 API 合同，不是页面筛选。
 
-另开一个终端运行：
+## 收束讲法
 
-```powershell
-cd D:\2026.07.09\AAA\smart-cs
-$env:SMARTCS_BASE_URL="http://127.0.0.1:8000"
-& D:\2026.07.09\conda-envs\smart-cs\python.exe scripts\demo_enterprise_flow.py
-```
+> SmartCS 的价值是把“制度问答”放进受控服务链路：先认证、再按受众检索、回答附来源；遇到例外只生成待确认草稿，确认后才形成 HR 可处理的请求，并且全程有租户和角色边界。这是企业内部 AI 助手比普通聊天机器人更需要的工程能力。
 
-也可以打开：
+## 现场异常说明
 
-```text
-http://127.0.0.1:8000/static/assistant.html
-```
-
-## 讲解顺序
-
-1. 先看 `/health`，说明服务、数据库、Chroma 都正常。
-2. 注册 owner，owner 创建一个新租户。
-3. owner 创建 agent 和 employee，说明这是租户内员工身份管理。
-4. agent 访问后台被拒，说明业务角色不等于后台管理员。
-5. owner 创建企业知识，说明知识不是写死在 prompt 里。
-6. 上传文档，看到 `status=ready` 和 `chunk_count=1`。
-7. employee 调用 `/assistant/chat`，说明统一员工 Agent 入口存在。
-8. 看 `enabled_skills`，说明普通员工只拿到知识 Skill。
-9. 查看后台知识、文档、分析接口。
-10. 用 A 租户 token 访问 B 租户后台被拒，说明租户边界生效。
-
-如果现场要讲 CRM 能力：
-
-> CRM 相关能力不是让 LLM 直接改库，而是先生成待确认草稿。用户确认时，后端重新校验权限、处理幂等键、写入数据并记录审计日志。
-
-## 面试讲法
-
-可以这样讲：
-
-> 我重点演示的不是回答文案有多华丽，而是企业 Agent 必须具备的工程闭环。这里员工先认证，后端根据角色开放 Skills；普通员工只能查知识，销售或管理员才能查 CRM 和准备业务操作。写操作不会由 LLM 直接执行，而是先生成草稿，确认后再由后端写入并审计。
-
-如果面试官追问“企业价值是什么”，回答：
-
-> 企业真正关心的是 AI 能不能安全接入内部知识和业务系统。SmartCS 覆盖了租户隔离、角色权限、知识治理、工具调用、确认后写入、审计日志和测试验证，这些是 Agent 从 demo 走向企业应用时绕不开的部分。
-
-## 最新本地演示关注点
-
-```text
-owner register: 201
-agent creation: 201
-employee creation: 201
-agent admin access: 403
-knowledge creation: 201
-document upload: 201, status=ready, chunk_count=1
-assistant route: 200 when LLM is configured, 503 is acceptable when LLM key is absent
-knowledge/documents/analytics backend views: 200
-cross-tenant admin access: 403
-```
-
-## 边界说明
-
-- 离线 hash embedding 只是为了稳定演示，不代表生产 embedding 质量。
-- 本地 CRM 是 fictional demo data，不是完整 CRM 产品。
-- 如果 `.env` 没有真实 LLM key，assistant 路由会返回可读的 503；角色和安全边界由测试覆盖。
-- 主展示入口是 `/assistant`；旧 `/chat` 已下线，`/business` 仅保留 JWT 保护的受控写入过渡接口。
+- `503`：模型、提供方、网络或额度不可用。脚本会失败退出，不能把它描述为演示成功。
+- 没有来源引用：停止演示，检查文档导入状态、employee 受众和模型输出；不要用人工补写的引用冒充结果。
+- 任何日志、截图或问题单都不应包含 API key、JWT、密码或 `.env` 内容。

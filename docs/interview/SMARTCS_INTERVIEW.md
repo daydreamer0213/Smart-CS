@@ -1,162 +1,67 @@
-# SmartCS Interview Notes
+# SmartCS 面试要点
 
-## Project Positioning
+## 项目定位
 
-SmartCS is an enterprise AI application engineering sample:
+SmartCS 是面向企业内部员工的多租户 HR 服务 Agent 后端工程样板。它聚焦制度知识、来源引用、例外转人工与可治理的 HR 支持生命周期，而不是把 CRM 或聊天 UI 当成主价值。
 
-- multi-tenant enterprise employee Agent backend.
-- tenant-scoped RAG and document import.
-- role-scoped enterprise knowledge and CRM Skills.
-- confirmation-gated CRM writes.
-- audit logs and idempotent confirmation.
-- admin governance APIs.
-- JWT and API key authentication.
-- tests for auth, tenant isolation, FAQ/document RAG, primary-route rate
-  limiting, agent behavior, CRM safety, and security cases.
+## 简历 bullet
 
-The point is not "I made a chatbot." The point is "I can build the backend
-engineering around an enterprise Agent workflow."
+- 独立构建 FastAPI 多租户 HR 服务 Agent 后端，覆盖 JWT 身份边界、角色化文档权限、文档导入、BM25 + 向量检索与带来源引用的制度问答。
+- 设计“检索不足或例外 -> 转人工草稿 -> 员工确认 -> 幂等建单 -> HR 指派/解决 -> 员工可见状态”的受控服务闭环，并以最小审计快照记录状态变化。
+- 使用 pytest 覆盖认证、租户隔离、文档受众、检索失败降级、Agent 工具调用和转人工生命周期，并提供可复现的本地实时演示脚本。
 
-## Practical Business Scenarios
+## 30 秒讲法
 
-### Internal employee assistant
+> SmartCS 是我做的企业内部 HR 服务 Agent 后端。员工先用 JWT 进入自己的租户，Agent 只能检索该员工有权限的制度文档，并给出来源引用。遇到制度未覆盖的例外时，它只创建待确认草稿；员工确认后，后端用幂等键建成正式请求，再由 HR 指派和解决。项目证明的是 RAG 和 Agent 如何被身份、权限、状态机与测试约束在企业流程里。
 
-Employees can ask about policies, processes, product rules, or field meanings.
-The assistant retrieves enterprise knowledge under the current tenant and role.
-Some knowledge entries can be role-restricted.
+## 两分钟讲法
 
-### Sales assistant
+我没有把 SmartCS 做成传统 FAQ 客服，而是选了企业内部员工查询制度这个具体场景。企业需要的不只是回答文本，更是“谁能问、能看到哪些制度、答案依据什么、例外谁来负责、状态如何追踪”。
 
-Sales users can query local CRM facts such as customers, contacts, leads,
-opportunities, and follow-up tasks. The assistant must use CRM Skills for CRM
-facts instead of inventing answers.
+后端使用 FastAPI、SQLAlchemy 和 Alembic 管理多租户数据及演进；JWT 把用户身份、角色和租户带到路由边界。文档导入后会进入 ChromaDB 向量检索和 BM25 检索，检索时同时过滤租户和受众角色。HR Agent 使用受限工具完成制度查询，答案必须携带授权来源；检索不足、信息不完整或员工主动要求人工时，不继续编造，而是创建待确认的转人工草稿。
 
-### Controlled business actions
+确认是重要的安全边界。员工确认后，后端以幂等键建立正式 HR 支持请求，owner/admin 才能指派或解决；员工只可读取自己的状态。这个设计把模型的建议与业务状态变更分开，并通过最小审计快照记录生命周期。测试和实时脚本共同证明这条链路可复现。
 
-The Agent can prepare lead/task changes, but it cannot directly write business
-data. It creates a pending action draft; a separate confirmation endpoint
-revalidates permissions, handles idempotency, performs the write, and records an
-audit log.
+## 深聊问题
 
-### Multi-tenant AI governance
+### Agent 在这里做什么？
 
-Each tenant has isolated users, knowledge, documents, CRM demo data, admin APIs,
-and credentials. SmartCS treats tenant isolation as a backend contract, not a UI
-filter.
+Agent 的价值不是任意调用系统，而是在后端允许的工具范围内判断“检索回答、澄清问题还是创建转人工草稿”。工具的租户和角色校验在服务端执行，不依赖 prompt 约定。
 
-## Resume Bullets
+### 为什么要来源引用？
 
-- Built a FastAPI-based multi-tenant enterprise employee Agent with RAG,
-  document import, role-scoped CRM Skills, confirmation-gated writes, audit
-  logs, admin APIs, and automated tests.
-- Designed tenant and role isolation across knowledge, documents, CRM facts,
-  admin APIs, API keys, JWT users, and Agent Skills.
-- Implemented JWT authentication with owner tenant creation, authorized
-  tenant-member creation, owner/admin/agent/employee roles, token refresh, and
-  backward-compatible API key support.
-- Added a local CRM sales-assistant MVP with customer overview, lead/task action
-  drafts, explicit confirmation, duplicate-lead protection, idempotent
-  confirmation, and audit logs.
-- Covered key backend behavior with pytest cases for FAQ/document retrieval,
-  BM25 incremental indexing, Agent tools, role-scoped Skills, controlled CRM
-  writes, primary-route rate limiting, security, tenant isolation, and JWT boundaries.
+制度回答需要可核验依据。SmartCS 只有在检索到当前员工可访问的文档来源时才将其作为可回答证据，返回的 `[source:<id>]` 让演示和排查都能定位依据。
 
-## 30-Second Pitch
+### 为什么要员工确认？
 
-SmartCS is my Python AI backend sample. It is a multi-tenant enterprise employee
-Agent: users authenticate first, then the backend exposes only the Skills their
-role permits. Employees can query enterprise knowledge; sales users can query
-CRM facts and prepare business changes. Actual writes require explicit
-confirmation, permission revalidation, idempotency, and audit logs.
+模型识别到异常不等于应该立刻创建工单。待确认草稿让员工知道系统准备提交什么；确认接口再执行身份、租户、幂等与状态校验，避免模型直接写入业务状态。
 
-## 2-Minute Pitch
+### 租户边界如何保证？
 
-I did not want SmartCS to be another FAQ chatbot demo, so I shaped it around
-enterprise Agent concerns. A company using this kind of system cares about
-whether tenant data is isolated, whether employees see only the right Skills,
-whether knowledge can be governed, whether CRM facts come from tools, and
-whether business writes are safe.
+租户 slug、JWT 声明和持久化查询共同参与校验。文档、检索、HR 支持请求和管理接口都要求同一租户；演示脚本会用 A 租户员工 JWT 访问 B 租户并验证 `403`。
 
-The backend is FastAPI. Tenants own users, knowledge, documents, conversations,
-admin API keys, and local CRM demo records. The RAG layer combines document
-import, chunking, vector retrieval, BM25 search, and role-scoped knowledge
-visibility. The Agent layer exposes knowledge and CRM tools based on the user
-role.
+### 检索失败怎么办？
 
-The CRM workflow is deliberately controlled: the Agent can create a draft for a
-lead or follow-up task, but a separate confirmation endpoint performs the write.
-That confirmation path revalidates permissions, supports idempotency, handles
-conflicts, and writes an audit log. This is the difference between a demo
-chatbot and an enterprise AI backend.
+检索不可用或证据不足时，系统不应生成没有依据的制度结论。Agent 会降级为澄清或人工处理路径；实时演示中若模型接口返回 `503`，脚本直接失败，明确要求检查模型配置、网络或额度。
 
-## Deep-Dive Talking Points
+### 为什么不直接做 HRIS？
 
-### Why role-scoped Skills?
+本期目标是验证企业 AI 服务底座，而不是复制完整 HRIS。员工制度问答和例外处理已经能验证身份、文档权限、RAG 证据、Agent 决策与人工生命周期；真实 HRIS 的主数据和审批规则需要通过后续适配器接入。
 
-Enterprise assistants should not expose the same abilities to every employee.
-SmartCS gives `employee` knowledge access only, while `agent/admin/owner` can
-also use CRM read and prepare-change Skills. Tool selection is a backend
-decision, not a prompt-only convention.
+## 下一步的真实生产化工作
 
-### Why confirmation-gated writes?
+- SSO/SCIM 与邀请制成员管理。
+- HRIS 或工单系统适配器。
+- 通知、SLA 与升级规则。
+- tracing、metrics、告警与运营看板。
+- CI/CD、部署加固和生产密钥治理。
 
-LLMs should not directly mutate business data. SmartCS separates intent from
-execution: the Agent drafts an action, the user confirms it, and the backend
-revalidates and writes. This makes the workflow auditable and safer.
+## 演示路径
 
-### Why JWT and API key together?
+按 [本地 HR Agent 演示手册](../operations/local-hr-agent-demo.md) 启动，再运行 `scripts/demo_enterprise_flow.py`。三分钟内依次展示健康检查、身份、受众文档、引用回答、待确认草稿、确认后的正式请求、HR 处理、员工状态与跨租户 `403`。
 
-JWT is for human operators and employee sessions. API key is retained for
-machine-to-machine scripts and admin automation. Both paths validate tenant
-boundaries.
+## 诚实边界
 
-### What was the important JWT security issue?
-
-The first draft allowed a request body to choose `role=admin` for an existing
-tenant if the caller knew the tenant slug. I treated that as a real tenant
-boundary bug, reproduced it with a failing test, then fixed the root cause:
-admin/agent/employee creation for an existing tenant now requires same-tenant
-owner/admin JWT or same-tenant API key.
-
-### How is this different from DocMind or KnowledgeFlow?
-
-DocMind proves RAG collaboration experience. KnowledgeFlow proves independent
-multi-agent project ability. SmartCS proves Python AI backend engineering:
-auth, tenant boundaries, RAG, role-scoped Agent Skills, controlled business
-writes, admin APIs, tests, and operational paths in one service.
-
-### What would you improve next?
-
-- Add invitation-based member onboarding.
-- Add CI/CD and deployment packaging.
-- Add production observability dashboards and tracing.
-- Harden secrets and environment management.
-- Replace fictional local CRM data with a real CRM integration adapter.
-
-## Demo Path
-
-1. Start the app and health check.
-2. Register an owner and create a tenant.
-3. Use the owner JWT to create an agent and an employee.
-4. Create enterprise knowledge and import a document.
-5. Call `/api/v1/{tenant_slug}/assistant/chat` as the employee.
-6. Show enabled Skills are role-scoped.
-7. Show admin knowledge/documents/analytics.
-8. Show agent admin access is forbidden.
-9. Show cross-tenant admin access is forbidden.
-
-Use:
-
-```powershell
-$env:EMBEDDING_PROVIDER="hash"
-& D:\2026.07.09\conda-envs\smart-cs\python.exe scripts\demo_enterprise_flow.py
-```
-
-## Honest Boundaries
-
-- This is not a production SaaS deployment yet.
-- The local CRM is fictional demo data, not a complete CRM product.
-- The UI is not the main proof point.
-- Full answer quality depends on configured LLM and embedding providers.
-- The current value is backend engineering maturity around an enterprise Agent
-  workflow.
+- 这是企业 AI 应用工程样板，不是已上线的商业 HR SaaS。
+- 回答质量依赖已配置的模型、embedding 与实际制度文档质量。
+- 当前未接入真实 HRIS、SSO、通知 SLA、生产观测和生产密钥管理。

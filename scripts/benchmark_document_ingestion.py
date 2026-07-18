@@ -13,6 +13,8 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.core.parsing.chunker import chunk_text
 from app.core.parsing.parser import parse_file
 
+SAFE_ERROR_MESSAGE = "Document processing failed."
+
 
 def _page_count(path: Path) -> int | None:
     if path.suffix.lower() != ".pdf":
@@ -35,9 +37,10 @@ async def _benchmark_fixture(fixture_dir: Path, case: dict) -> dict:
         "format": case["format"],
         "category": case["category"],
         "expected_baseline_status": case["expected_baseline_status"],
-        "page_count": _page_count(path),
+        "page_count": None,
     }
     try:
+        base["page_count"] = _page_count(path)
         text = parse_file(path.name, path.read_bytes())
         chunks = await chunk_text(text)
         found = [fact for fact in case["required_facts"] if fact in text]
@@ -66,7 +69,7 @@ async def _benchmark_fixture(fixture_dir: Path, case: dict) -> dict:
             "missing_facts": case["required_facts"],
             "fact_recall": 0.0,
             "error_type": type(exc).__name__,
-            "error": str(exc)[:300],
+            "error": SAFE_ERROR_MESSAGE,
         }
 
 

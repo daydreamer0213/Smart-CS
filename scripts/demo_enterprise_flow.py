@@ -1,4 +1,4 @@
-"""Run a local SmartCS enterprise-flow demo.
+"""Run a local SmartCS HR Agent lifecycle demo.
 
 Start the API first:
     python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
@@ -20,6 +20,10 @@ import urllib.request
 
 
 BASE_URL = os.getenv("SMARTCS_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+
+
+class DemoFailure(RuntimeError):
+    pass
 
 
 def _suffix() -> str:
@@ -53,89 +57,107 @@ def _request(method: str, path: str, *, token: str | None = None, json_body=None
         return exc.code, body
 
 
-def _multipart_file(field_name: str, filename: str, content: bytes, content_type: str):
+def _multipart_file(
+    field_name: str,
+    filename: str,
+    content: bytes,
+    content_type: str,
+    *,
+    fields: list[tuple[str, str]] = (),
+) -> tuple[bytes, dict[str, str]]:
     boundary = f"----smartcs-demo-{_suffix()}"
-    body = b"".join(
-        [
+    parts = []
+    for name, value in fields:
+        parts.extend([
             f"--{boundary}\r\n".encode(),
-            (
-                f'Content-Disposition: form-data; name="{field_name}"; '
-                f'filename="{filename}"\r\n'
-            ).encode(),
-            f"Content-Type: {content_type}\r\n\r\n".encode(),
-            content,
-            f"\r\n--{boundary}--\r\n".encode(),
-        ]
-    )
-    return body, {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode(),
+            value.encode("utf-8"),
+            b"\r\n",
+        ])
+    parts.extend([
+        f"--{boundary}\r\n".encode(),
+        f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'.encode(),
+        f"Content-Type: {content_type}\r\n\r\n".encode(),
+        content,
+        f"\r\n--{boundary}--\r\n".encode(),
+    ])
+    return b"".join(parts), {"Content-Type": f"multipart/form-data; boundary={boundary}"}
 
 
-def _print_step(title: str):
+def _require(status: int, expected: set[int], label: str) -> None:
+    if status not in expected:
+        raise DemoFailure(f"{label} failed: expected {sorted(expected)}, got {status}")
+
+
+def _require_live_chat(status: int, body: dict, label: str) -> None:
+    if status == 503:
+        raise DemoFailure(
+            f"{label} cannot call the configured LLM. Check LLM_API_KEY, "
+            "LLM_BASE_URL, LLM_MODEL, network access, and provider quota."
+        )
+    _require(status, {200}, label)
+
+
+def _require_cited_answer(chat: dict) -> None:
+    if not (chat.get("sources") or []) or "[source:" not in str(chat.get("reply") or ""):
+        raise DemoFailure("policy answer did not contain an authorized source citation")
+
+
+def _require_pending_draft(chat: dict) -> str:
+    draft = chat.get("pending_handoff") or {}
+    if draft.get("status") != "pending" or not draft.get("id"):
+        raise DemoFailure("exception request did not create a pending HR handoff draft")
+    return str(draft["id"])
+
+
+def _print_step(title: str) -> None:
     print(f"\n== {title} ==")
 
 
-def _show(status: int, body):
-    print(f"status: {status}")
-    print(json.dumps(body, ensure_ascii=False, indent=2)[:2000])
-
-
-def _show_summary(status: int, body):
-    print(f"status: {status}")
-    print(json.dumps(body, ensure_ascii=False, indent=2))
-
-
-def _expect(status: int, expected: set[int], label: str):
-    if status not in expected:
-        raise SystemExit(f"{label} failed: expected {sorted(expected)}, got {status}")
+def _show_summary(**values) -> None:
+    print(json.dumps(values, ensure_ascii=False))
 
 
 def main() -> int:
-    slug = os.getenv("SMARTCS_DEMO_TENANT", f"demo-{_suffix()}")
+    suffix = _suffix()
+    slug = f"beichen-hr-{suffix}"
     password = os.getenv("SMARTCS_DEMO_PASSWORD", "Password123")
-    owner_email = f"owner-{_suffix()}@example.com"
-    agent_email = f"agent-{_suffix()}@example.com"
-    employee_email = f"employee-{_suffix()}@example.com"
 
     _print_step("Health")
-    status, body = _request("GET", "/health")
-    _show(status, body)
-    _expect(status, {200}, "health")
+    status, _ = _request("GET", "/health")
+    _require(status, {200}, "health")
+    _show_summary(status=status)
 
-    _print_step("Owner registers a tenant")
+    _print_step("Create HR tenant and users")
     status, owner = _request(
         "POST",
         "/api/v1/auth/register",
         json_body={
             "role": "owner",
             "tenant_slug": slug,
-            "tenant_name": "Demo Tenant",
-            "email": owner_email,
+            "tenant_name": "Beichen Technology HR",
+            "email": f"owner-{suffix}@example.com",
             "password": password,
-            "display_name": "Demo Owner",
+            "display_name": "HR Owner",
         },
     )
-    _show(status, {"tenant_slug": slug, "owner_email": owner_email, "created": status == 201})
-    _expect(status, {201}, "owner register")
+    _require(status, {201}, "owner register")
     owner_token = owner["access_token"]
 
-    _print_step("Owner creates an agent user")
-    status, agent = _request(
+    status, admin = _request(
         "POST",
         "/api/v1/auth/register",
         token=owner_token,
         json_body={
-            "role": "agent",
+            "role": "admin",
             "tenant_slug": slug,
-            "email": agent_email,
+            "email": f"hr-admin-{suffix}@example.com",
             "password": password,
-            "display_name": "Demo Agent",
+            "display_name": "HR Admin",
         },
     )
-    _show(status, {"agent_email": agent_email, "created": status == 201})
-    _expect(status, {201}, "agent register")
-    agent_token = agent["access_token"]
+    _require(status, {201}, "HR admin register")
 
-    _print_step("Owner creates a knowledge-only employee")
     status, employee = _request(
         "POST",
         "/api/v1/auth/register",
@@ -143,137 +165,140 @@ def main() -> int:
         json_body={
             "role": "employee",
             "tenant_slug": slug,
-            "email": employee_email,
+            "email": f"employee-{suffix}@example.com",
             "password": password,
-            "display_name": "Demo Employee",
+            "display_name": "Employee",
         },
     )
-    _show(status, {"employee_email": employee_email, "created": status == 201})
-    _expect(status, {201}, "employee register")
+    _require(status, {201}, "employee register")
     employee_token = employee["access_token"]
+    admin_token = admin["access_token"]
+    admin_id = admin["user"]["id"]
+    _show_summary(tenant_slug=slug, status="ready")
 
-    _print_step("Agent is blocked from admin APIs")
-    status, body = _request("GET", f"/api/v1/admin/{slug}/knowledge", token=agent_token)
-    _show(status, body)
-    _expect(status, {403}, "agent forbidden")
-
-    _print_step("Owner creates governed enterprise knowledge")
-    status, item = _request(
-        "POST",
-        f"/api/v1/admin/{slug}/knowledge",
-        token=owner_token,
-        json_body={
-            "question": "How is annual leave calculated?",
-            "answer": "Demo policy: employees receive 5 annual-leave days after one full year of service.",
-            "keywords": "HR,annual leave,policy",
-        },
-    )
-    if status == 201:
-        _show(status, item)
-    else:
-        _show_summary(status, {"created": False, "reason": "embedding_or_service_unavailable"})
-    if status == 201:
-        print("Knowledge item created.")
-    elif status in {400, 500}:
-        print("Knowledge creation depends on embedding quota/config; continuing with auth demo.")
-    else:
-        raise SystemExit(f"create knowledge failed unexpectedly: {status}")
-
-    _print_step("Document import attempt")
+    _print_step("Upload employee-visible annual leave policy")
     upload_body, headers = _multipart_file(
         "file",
-        "demo-policy.txt",
-        b"Annual leave policy: employees receive 5 annual-leave days after one full year of service.",
+        "beichen-annual-leave-policy.txt",
+        "北辰科技年假制度：全职员工工作满一年后享有 5 个工作日年假，至少提前 3 个工作日申请。".encode("utf-8"),
         "text/plain",
+        fields=[("audience_roles", "employee")],
     )
-    status, body = _request(
+    status, document = _request(
         "POST",
         f"/api/v1/admin/{slug}/documents/upload",
         token=owner_token,
         data=upload_body,
         headers=headers,
     )
-    _show(status, body)
-    if status not in {201, 400, 409, 500}:
-        raise SystemExit(f"document upload failed unexpectedly: {status}")
-    if status in {400, 500}:
-        print("Document import depends on parser/embedding config; continuing.")
+    _require(status, {201}, "document upload")
+    if document.get("status") != "ready" or not document.get("document_id"):
+        raise DemoFailure("document upload did not finish in ready state")
+    document_id = str(document["document_id"])
+    _show_summary(document_id=document_id, status=document["status"])
 
-    _print_step("Unified enterprise assistant")
-    message = os.getenv("SMARTCS_DEMO_CHAT_MESSAGE", "How is annual leave calculated?")
-    status, chat = _request(
+    session_id = f"demo-session-{int(time.time())}"
+    _print_step("Employee asks a cited policy question")
+    status, policy_chat = _request(
         "POST",
         f"/api/v1/{slug}/assistant/chat",
         token=employee_token,
-        json_body={"session_id": f"demo-session-{int(time.time())}", "message": message},
+        json_body={"session_id": session_id, "message": "北辰科技年假如何计算？"},
     )
-    _show_summary(
-        status,
-        {
-            "enabled_skills": chat.get("enabled_skills"),
-            "has_reply": bool(chat.get("reply")),
-            "has_pending_action": bool(chat.get("pending_action")),
+    _require_live_chat(status, policy_chat, "policy question")
+    _require_cited_answer(policy_chat)
+    _show_summary(source_ids=[source.get("source_id") for source in policy_chat["sources"]], status="cited")
+
+    _print_step("Employee requests an overseas assignment exception")
+    status, exception_chat = _request(
+        "POST",
+        f"/api/v1/{slug}/assistant/chat",
+        token=employee_token,
+        json_body={
+            "session_id": session_id,
+            "message": "我在海外派驻期间需要申请年假例外，请转 HR 人工处理。",
         },
     )
-    if status not in {200, 503}:
-        raise SystemExit(f"assistant chat failed unexpectedly: {status}")
-    if status == 503:
-        print("Assistant chat needs LLM configuration; role-scoped API wiring is still demonstrated by tests.")
+    _require_live_chat(status, exception_chat, "exception request")
+    draft_id = _require_pending_draft(exception_chat)
+    _show_summary(draft_id=draft_id, status="pending")
 
-    _print_step("Backend view: knowledge")
-    status, body = _request("GET", f"/api/v1/admin/{slug}/knowledge", token=owner_token)
-    _show(status, body)
-    _expect(status, {200}, "list knowledge")
-
-    _print_step("Backend view: documents")
-    status, body = _request("GET", f"/api/v1/admin/{slug}/documents", token=owner_token)
-    _show_summary(
-        status,
-        {
-            "total": body.get("total"),
-            "items": [
-                {
-                    "filename": item.get("filename"),
-                    "status": item.get("status"),
-                    "chunk_count": item.get("chunk_count"),
-                }
-                for item in body.get("items", [])
-            ],
-        },
+    _print_step("Employee confirms the HR handoff")
+    status, handoff = _request(
+        "POST",
+        f"/api/v1/{slug}/hr-support/drafts/{draft_id}/confirm",
+        token=employee_token,
+        headers={"Idempotency-Key": f"demo-confirm-{suffix}"},
     )
-    _expect(status, {200}, "list documents")
+    _require(status, {200}, "handoff confirmation")
+    if handoff.get("status") != "open" or not handoff.get("id"):
+        raise DemoFailure("handoff confirmation did not create an open official handoff")
+    handoff_id = str(handoff["id"])
+    _show_summary(handoff_id=handoff_id, status=handoff["status"])
 
-    _print_step("Backend view: analytics")
-    status, body = _request("GET", f"/api/v1/admin/{slug}/analytics/overview", token=owner_token)
-    _show(status, body)
-    _expect(status, {200}, "analytics")
+    _print_step("HR admin assigns and resolves the handoff")
+    status, handoffs = _request("GET", f"/api/v1/{slug}/hr-support/admin", token=admin_token)
+    _require(status, {200}, "admin handoff list")
+    if not any(item.get("id") == handoff_id for item in handoffs):
+        raise DemoFailure("official handoff is missing from the HR admin queue")
 
-    _print_step("Cross-tenant boundary")
+    status, assigned = _request(
+        "PATCH",
+        f"/api/v1/{slug}/hr-support/admin/{handoff_id}",
+        token=admin_token,
+        json_body={"status": "assigned", "assigned_user_id": admin_id},
+    )
+    _require(status, {200}, "assign handoff")
+    if assigned.get("status") != "assigned":
+        raise DemoFailure("handoff assignment did not reach assigned state")
+
+    status, resolved = _request(
+        "PATCH",
+        f"/api/v1/{slug}/hr-support/admin/{handoff_id}",
+        token=admin_token,
+        json_body={"status": "resolved", "resolution_note": "已由 HR 核验：海外派驻例外需人工审核。"},
+    )
+    _require(status, {200}, "resolve handoff")
+    if resolved.get("status") != "resolved":
+        raise DemoFailure("handoff resolution did not reach resolved state")
+    _show_summary(handoff_id=handoff_id, status=resolved["status"])
+
+    _print_step("Employee verifies own handoff status")
+    status, my_handoffs = _request("GET", f"/api/v1/{slug}/hr-support/me", token=employee_token)
+    _require(status, {200}, "employee handoff list")
+    if not any(item.get("id") == handoff_id and item.get("status") == "resolved" for item in my_handoffs):
+        raise DemoFailure("employee cannot see the resolved official handoff")
+    _show_summary(handoff_id=handoff_id, status="resolved")
+
+    _print_step("Verify tenant isolation")
     other_slug = f"{slug}-other"
-    status, other = _request(
+    status, _ = _request(
         "POST",
         "/api/v1/auth/register",
         json_body={
             "role": "owner",
             "tenant_slug": other_slug,
-            "tenant_name": "Other Tenant",
-            "email": f"other-{_suffix()}@example.com",
+            "tenant_name": "Other HR Tenant",
+            "email": f"other-{suffix}@example.com",
             "password": password,
             "display_name": "Other Owner",
         },
     )
-    _expect(status, {201}, "other tenant register")
-    status, body = _request("GET", f"/api/v1/admin/{other_slug}/knowledge", token=owner_token)
-    _show(status, body)
-    _expect(status, {403}, "cross tenant denied")
+    _require(status, {201}, "other tenant register")
+    status, _ = _request("GET", f"/api/v1/{other_slug}/hr-support/me", token=employee_token)
+    _require(status, {403}, "cross-tenant access")
+    _show_summary(status="tenant_access_denied")
 
-    print("\nDemo complete. Open /static/assistant.html for the single-chat UI.")
+    print("\nLive HR Agent demo complete.")
     return 0
 
 
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
+    except DemoFailure as exc:
+        print(f"Live HR Agent demo failed: {exc}", file=sys.stderr)
+        raise SystemExit(1)
     except urllib.error.URLError as exc:
         print(f"Cannot reach SmartCS at {BASE_URL}: {exc}", file=sys.stderr)
         raise SystemExit(1)

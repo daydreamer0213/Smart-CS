@@ -30,6 +30,7 @@
 - Modify: docs/interview/SMARTCS_DEMO_SCRIPT.md - three-minute Chinese presentation.
 - Modify: docs/interview/SMARTCS_INTERVIEW.md - resume/interview content.
 - Modify: docs/interview/SMARTCS_DELIVERY_PACKAGE.md - delivery summary consistent with the above.
+- Modify: docs/interview/SMARTCS_FINAL_PITCH.md - concise final pitch consistent with the HR service Agent scope.
 
 ### Task 1: Replace the stale CRM demo with a strict HR lifecycle demo
 
@@ -261,6 +262,7 @@ git commit -m "feat: add live HR agent demo"
 - Modify: docs/interview/SMARTCS_DEMO_SCRIPT.md
 - Modify: docs/interview/SMARTCS_INTERVIEW.md
 - Modify: docs/interview/SMARTCS_DELIVERY_PACKAGE.md
+- Modify: docs/interview/SMARTCS_FINAL_PITCH.md
 
 **Interfaces:**
 - Consumes: Task 1 script status/ID/citation output and failure behavior.
@@ -310,7 +312,7 @@ SmartCS 是一个面向企业内部员工的多租户 HR 服务 Agent 后端工�
 6. 文档、检索、工单和 API 都按租户与角色做后端边界校验。
 ~~~
 
-Include current FastAPI/SQLAlchemy/Alembic/ChromaDB/BM25/LangGraph/JWT stack, a Mermaid diagram ending in HR Support Handoff, role table, test command, link to the new runbook, and links to the three interview documents. Remove the nonexistent SMARTCS_FINAL_PITCH.md link. State only once that /business/* is a JWT-protected Sales Copilot Lab kept for historical regression coverage, not the primary route or interview demo. Do not claim hash embedding is a live-answer demo mode and do not call 503 successful.
+Include current FastAPI/SQLAlchemy/Alembic/ChromaDB/BM25/LangGraph/JWT stack, a Mermaid diagram ending in HR Support Handoff, role table, test command, link to the new runbook, and links to the four interview documents. Keep the valid SMARTCS_FINAL_PITCH.md link after updating that document. State only once that /business/* is a JWT-protected Sales Copilot Lab kept for historical regression coverage, not the primary route or interview demo. Do not claim hash embedding is a live-answer demo mode and do not call 503 successful.
 
 - [ ] **Step 3: Rewrite interview artefacts**
 
@@ -326,12 +328,12 @@ In SMARTCS_INTERVIEW.md, insert these resume bullets:
 
 Also add a 30-second pitch, two-minute explanation, deep-dive answers for Agent/citations/confirmation/tenant boundary/retrieval failure/why not HRIS, and realistic next steps: SSO/SCIM, HRIS or ticket adapter, notification/SLA, tracing/metrics, CI/CD, and production secrets.
 
-In SMARTCS_DELIVERY_PACKAGE.md, align one-line position, bullets, demo route, boundaries, and links to the same HR terms. Remove claims that CRM is primary.
+In SMARTCS_DELIVERY_PACKAGE.md, align one-line position, bullets, demo route, boundaries, and links to the same HR terms. Remove claims that CRM is primary. In SMARTCS_FINAL_PITCH.md, replace stale CRM-first claims with a concise HR service Agent one-line position, resume bullets, 30-second pitch, and honest boundaries; retain it as the README's final-pitch link.
 
 - [ ] **Step 4: Run mechanical consistency checks**
 
 ~~~powershell
-rg -n "pending_action|controlled CRM operations|role-scoped CRM Skills|CRM Skills|SMARTCS_FINAL_PITCH" README.md docs/interview scripts/demo_enterprise_flow.py
+rg -n "pending_action|controlled CRM operations|role-scoped CRM Skills|CRM Skills" README.md docs/interview scripts/demo_enterprise_flow.py
 rg -n "HR 服务 Agent|转人工|pending_handoff|跨租户" README.md docs/operations docs/interview scripts/demo_enterprise_flow.py
 git diff --check
 ~~~
@@ -341,7 +343,7 @@ Expected: first command exits 1; second finds HR workflow in every delivery arte
 - [ ] **Step 5: Commit**
 
 ~~~powershell
-git add README.md docs/operations/local-hr-agent-demo.md docs/interview/SMARTCS_DEMO_SCRIPT.md docs/interview/SMARTCS_INTERVIEW.md docs/interview/SMARTCS_DELIVERY_PACKAGE.md
+git add README.md docs/operations/local-hr-agent-demo.md docs/interview/SMARTCS_DEMO_SCRIPT.md docs/interview/SMARTCS_INTERVIEW.md docs/interview/SMARTCS_DELIVERY_PACKAGE.md docs/interview/SMARTCS_FINAL_PITCH.md
 git commit -m "docs: polish HR agent portfolio delivery"
 ~~~
 

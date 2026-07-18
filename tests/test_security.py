@@ -153,6 +153,61 @@ async def test_search_filters_cross_tenant_document_chunk_ids(db, test_tenant, m
         db.rollback()
 
 
+async def test_search_rejects_high_distance_vector_only_source(db, test_tenant, monkeypatch):
+    from app.core.agent.hr_agent import search_hr_knowledge, set_hr_runtime
+
+    employee = _user(db, test_tenant, "distant-vector-employee@example.com")
+    document = Document(
+        tenant_id=test_tenant.id,
+        filename="unrelated-policy.txt",
+        file_type="txt",
+        file_hash="unrelated-policy-hash",
+        status="ready",
+    )
+    db.add(document)
+    db.flush()
+    chunk = DocumentChunk(
+        document_id=document.id,
+        chunk_index=0,
+        content="This content is unrelated to the query.",
+        status="active",
+    )
+    db.add(chunk)
+    db.flush()
+
+    class FakeEmbedding:
+        async def embed(self, _texts):
+            return [[0.0]]
+
+    class FakeVectorStore:
+        def search(self, *_args):
+            return [(chunk.id, 0.9)]
+
+    class FakeBm25:
+        def search(self, *_args):
+            return []
+
+    monkeypatch.setattr("app.core.agent.tools.get_embedding_provider", lambda: FakeEmbedding())
+    monkeypatch.setattr("app.core.agent.tools.get_vector_store", lambda: FakeVectorStore())
+    monkeypatch.setattr("app.core.agent.tools.get_bm25_manager", lambda: FakeBm25())
+
+    set_hr_runtime(db, test_tenant.id, test_tenant.slug, employee, "leave policy")
+    result = json.loads(await search_hr_knowledge.ainvoke({"query": "leave policy"}))
+
+    assert result["sources"] == []
+    assert result["result_count"] == 0
+
+    class FakeMatchingBm25:
+        def search(self, *_args):
+            return [(chunk.id, 1.0)]
+
+    monkeypatch.setattr("app.core.agent.tools.get_bm25_manager", lambda: FakeMatchingBm25())
+    set_hr_runtime(db, test_tenant.id, test_tenant.slug, employee, "leave policy")
+    bm25_result = json.loads(await search_hr_knowledge.ainvoke({"query": "leave policy"}))
+
+    assert [source["source_id"] for source in bm25_result["sources"]] == [chunk.id]
+
+
 async def test_search_filters_document_chunks_by_audience_role(db, test_tenant, monkeypatch):
     from app.core.agent.hr_agent import search_hr_knowledge, set_hr_runtime
 

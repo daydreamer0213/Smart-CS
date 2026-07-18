@@ -23,6 +23,8 @@ from app.core.retrieval_module import (
 )
 from app.core.retrieval.fusion import rrf_fusion
 
+MAX_VECTOR_DISTANCE = 0.5
+
 # Runtime context — set before each graph invocation
 _runtime: ContextVar[dict] = ContextVar("agent_runtime", default={})
 _handoff_flag: ContextVar[bool] = ContextVar("agent_handoff", default=False)
@@ -75,6 +77,7 @@ async def search_knowledge(query: str) -> str:
             loop.run_in_executor(None, bm.search, tenant_slug, query, 5),
         )
 
+        vector_results = [result for result in vector_results if result[1] <= MAX_VECTOR_DISTANCE]
         fused = rrf_fusion(vector_results, bm25_results, top_k=5)
 
         if not fused:

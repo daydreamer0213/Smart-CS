@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from math import isfinite
 from typing import cast
 
 from app.core.parsing.contracts import ParseQuality, ParseWarning, ParsedDocument
@@ -16,6 +17,9 @@ def evaluate_parse_quality(
     warnings: Iterable[ParseWarning] = (),
 ) -> ParseQuality:
     """Assess parser output without changing the parsed document."""
+    if not _is_finite_number(elapsed_ms) or elapsed_ms < 0:
+        raise ValueError("elapsed_ms must be a finite non-negative number")
+
     normalized_warnings = _normalize_warnings(warnings)
     covered_pages = _covered_pages(document)
     metrics: dict[str, int | float] = {
@@ -34,12 +38,17 @@ def evaluate_parse_quality(
         "elapsed_ms": elapsed_ms,
     }
 
-    ocr_confidence = document.metadata.get("ocr_confidence")
-    if isinstance(ocr_confidence, (int, float)) and not isinstance(ocr_confidence, bool):
-        metrics["ocr_confidence"] = ocr_confidence
-        if ocr_confidence < OCR_CONFIDENCE_THRESHOLD:
+    if "ocr_confidence" in document.metadata:
+        ocr_confidence = document.metadata["ocr_confidence"]
+        if _is_valid_ocr_confidence(ocr_confidence):
+            metrics["ocr_confidence"] = ocr_confidence
+            if ocr_confidence < OCR_CONFIDENCE_THRESHOLD:
+                normalized_warnings = _append_warning(
+                    normalized_warnings, "low_ocr_confidence"
+                )
+        else:
             normalized_warnings = _append_warning(
-                normalized_warnings, "low_ocr_confidence"
+                normalized_warnings, "invalid_ocr_confidence"
             )
 
     if document.page_count and len(covered_pages) != document.page_count:
@@ -47,7 +56,11 @@ def evaluate_parse_quality(
             normalized_warnings, "missing_page_coverage"
         )
 
-    if not document.elements or metrics["character_count"] == 0:
+    if (
+        "parser_exception" in normalized_warnings
+        or not document.elements
+        or metrics["character_count"] == 0
+    ):
         status = "failed"
     elif normalized_warnings:
         status = "review_required"
@@ -102,3 +115,11 @@ def _append_warning(
     warnings: list[ParseWarning], warning: ParseWarning
 ) -> list[ParseWarning]:
     return warnings if warning in warnings else [*warnings, warning]
+
+
+def _is_finite_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value)
+
+
+def _is_valid_ocr_confidence(value: object) -> bool:
+    return _is_finite_number(value) and 0.0 <= value <= 1.0

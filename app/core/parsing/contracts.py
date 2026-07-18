@@ -8,6 +8,7 @@ ParseWarning = Literal[
     "advanced_parser_incomplete",
     "encrypted_input",
     "indexing_blocked",
+    "invalid_ocr_confidence",
     "low_ocr_confidence",
     "missing_page_coverage",
     "parser_exception",

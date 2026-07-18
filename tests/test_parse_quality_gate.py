@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 
@@ -118,6 +120,40 @@ def test_quality_gate_failed_status_takes_precedence_over_blocking_warnings():
     )
 
     assert quality.status == "failed"
+
+
+def test_quality_gate_parser_exception_warning_takes_failed_precedence():
+    from app.core.parsing.quality import evaluate_parse_quality
+
+    quality = evaluate_parse_quality(_document(), warnings=["parser_exception"])
+
+    assert quality.status == "failed"
+
+
+@pytest.mark.parametrize("elapsed_ms", [-0.01, math.nan, math.inf, -math.inf])
+def test_quality_gate_rejects_invalid_elapsed_time_without_echoing_value(elapsed_ms):
+    from app.core.parsing.quality import evaluate_parse_quality
+
+    with pytest.raises(ValueError) as error:
+        evaluate_parse_quality(_document(), elapsed_ms=elapsed_ms)
+
+    assert str(error.value) == "elapsed_ms must be a finite non-negative number"
+
+
+@pytest.mark.parametrize(
+    "ocr_confidence",
+    [-0.01, 1.01, math.nan, math.inf, -math.inf, True, "0.8"],
+)
+def test_quality_gate_requires_review_for_invalid_ocr_confidence(ocr_confidence):
+    from app.core.parsing.quality import evaluate_parse_quality
+
+    quality = evaluate_parse_quality(
+        _document(metadata={"ocr_confidence": ocr_confidence})
+    )
+
+    assert quality.status == "review_required"
+    assert quality.warnings == ["invalid_ocr_confidence"]
+    assert "ocr_confidence" not in quality.metrics
 
 
 def test_parser_failure_quality_hides_exception_details():

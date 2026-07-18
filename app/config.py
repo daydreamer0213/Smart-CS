@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     # Optional local document parser. Keep downloaded artifacts in one data root.
     parser_data_root: str = "D:/DevData/smartcs"
+    parser_temp_dir: str = "D:/DevData/smartcs/tmp"
     docling_artifacts_path: str = "D:/DevData/smartcs/docling/artifacts"
     hf_home: str = "D:/DevData/smartcs/huggingface"
     torch_home: str = "D:/DevData/smartcs/torch"
@@ -68,6 +69,7 @@ class Settings(BaseSettings):
     def document_parser_paths_must_be_within_data_root(self):
         root_module, root = self._canonical_parser_path(self.parser_data_root)
         for field_name in (
+            "parser_temp_dir",
             "docling_artifacts_path",
             "hf_home",
             "torch_home",

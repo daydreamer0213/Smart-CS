@@ -10,12 +10,16 @@ automatic or alternate OCR backend.
 
 ## Set the local paths
 
-Run these commands in PowerShell from the repository root. They only set
-environment variables for the current shell.
+Run these commands in PowerShell from the repository root. The block sets
+environment variables for the current shell and creates the listed `D:`
+directories if they do not already exist.
 
 ```powershell
 $env:PIP_CACHE_DIR = 'D:\DevData\smartcs\pip'
 $env:PARSER_DATA_ROOT = 'D:\DevData\smartcs'
+$env:PARSER_TEMP_DIR = 'D:\DevData\smartcs\tmp'
+$env:TEMP = $env:PARSER_TEMP_DIR
+$env:TMP = $env:PARSER_TEMP_DIR
 $env:DOCLING_ARTIFACTS_PATH = 'D:\DevData\smartcs\docling\artifacts'
 $env:HF_HOME = 'D:\DevData\smartcs\huggingface'
 $env:TORCH_HOME = 'D:\DevData\smartcs\torch'
@@ -25,7 +29,11 @@ $env:DOCLING_DEVICE = 'cpu'
 $env:DOCLING_NUM_THREADS = '4'
 $env:OMP_NUM_THREADS = '4'
 
-New-Item -ItemType Directory -Force $env:PIP_CACHE_DIR, $env:DOCLING_ARTIFACTS_PATH, $env:HF_HOME, $env:TORCH_HOME, $env:TESSDATA_PREFIX | Out-Null
+New-Item -ItemType Directory -Force $env:PIP_CACHE_DIR, $env:PARSER_TEMP_DIR, $env:DOCLING_ARTIFACTS_PATH, $env:HF_HOME, $env:TORCH_HOME, $env:TESSDATA_PREFIX | Out-Null
+$resolvedTemp = & 'D:\2026.07.09\conda-envs\smart-cs\python.exe' -c "import tempfile; print(tempfile.gettempdir())"
+if ((Resolve-Path $resolvedTemp).Path -ne (Resolve-Path $env:PARSER_TEMP_DIR).Path) {
+    throw "Python tempfile directory does not resolve to PARSER_TEMP_DIR: $resolvedTemp"
+}
 ```
 
 `TESSDATA_PREFIX` is normalized to end in a slash. All parser paths must be
@@ -91,13 +99,18 @@ to `D:` and inspect common system-drive cache locations for unexpected new
 Docling, Hugging Face, Torch, or pip data:
 
 ```powershell
-@($env:PIP_CACHE_DIR, $env:PARSER_DATA_ROOT, $env:DOCLING_ARTIFACTS_PATH, $env:HF_HOME, $env:TORCH_HOME, $env:TESSDATA_PREFIX) |
+@($env:PIP_CACHE_DIR, $env:PARSER_DATA_ROOT, $env:PARSER_TEMP_DIR, $env:TEMP, $env:TMP, $env:DOCLING_ARTIFACTS_PATH, $env:HF_HOME, $env:TORCH_HOME, $env:TESSDATA_PREFIX) |
     ForEach-Object { Get-Item $_ | Select-Object FullName }
 
 Get-ChildItem -Force "$env:LOCALAPPDATA\pip\Cache", "$env:USERPROFILE\.cache\huggingface", "$env:USERPROFILE\.cache\docling" -ErrorAction SilentlyContinue |
     Select-Object FullName
+
+Get-ChildItem -File -Force -Recurse 'C:\Windows\Temp', "$env:LOCALAPPDATA\Temp" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Length -ge 10MB -and $_.Name -match '(?i)docling|pip|torch|huggingface|tesseract' } |
+    Select-Object FullName, Length, LastWriteTime
 ```
 
 For the supported Windows profile, if the audit finds newly created parser
-data outside `D:\DevData\smartcs`, stop before parsing documents and correct
-the environment variables or artifact target.
+data or unexpected large parser artifacts in common `C:` temp directories,
+stop before parsing documents and correct the environment variables or
+artifact target.

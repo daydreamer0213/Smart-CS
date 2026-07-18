@@ -61,6 +61,13 @@ The optional requirement is deliberately limited to Docling PDF support and
 local models. It does not select an OCR backend; OCR remains the configured
 Tesseract CLI only.
 
+`requirements-docling.txt` pins `torch==2.12.1` and
+`torchvision==0.27.1`, the verified Windows CPU pair for this SmartCS conda
+environment. This preserves the installed CPU Torch instead of allowing an
+unconstrained torchvision update to replace it. Any change to either pin
+requires a fresh D-drive dry-run followed by the full regression suite before
+installation.
+
 ## Prefetch local models
 
 After Docling is installed, download the default local models directly into

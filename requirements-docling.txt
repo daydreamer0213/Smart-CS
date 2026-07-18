@@ -1,2 +1,5 @@
 # Optional PDF parsing with local Docling models.
 docling-slim[format-pdf,models-local]>=2.113,<2.114
+# Verified Windows CPU pair for the SmartCS conda environment.
+torch==2.12.1
+torchvision==0.27.1

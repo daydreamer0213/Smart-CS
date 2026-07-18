@@ -61,10 +61,21 @@ def test_advanced_pdf_fixtures_use_docling_with_controlled_quality(
         tables = [element for element in document.elements if element.table_markdown]
         assert len(tables) == 1
         assert all(table.metadata == {"ocr": False} for table in tables)
+        table_text = "".join(tables[0].table_markdown.split())
+        non_table_text = "".join(
+            "".join(element.text.split())
+            for element in document.elements
+            if not element.table_markdown
+        )
         rows = ["".join(row.split()) for row in tables[0].table_markdown.splitlines()]
         header = next(row for row in rows if "工龄" in row)
         last_row = next(row for row in rows if "20年以上" in row)
         assert "年假天数" in header
         assert "15天" in last_row
         for value in ("工龄", "年假天数", "20年以上", "15天"):
-            assert tables[0].table_markdown.count(value) == 1
+            assert table_text.count(value) == 1
+        assert normalized_text.count("年假天数") == 2
+        assert non_table_text.count("年假天数") == 1
+        for value in ("20年以上", "15天"):
+            assert normalized_text.count(value) == 1
+            assert value not in non_table_text

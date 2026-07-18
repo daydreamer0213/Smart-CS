@@ -11,7 +11,7 @@ from app.core.parsing.contracts import ParsedDocument, ParsedElement
 from app.core.parsing.quality import evaluate_parse_quality, parser_failure_quality
 
 NativeTable = tuple[int, tuple[float, float, float, float], str]
-MIN_TABLE_BBOX_OVERLAP = 0.5
+MIN_TABLE_BBOX_IOU = 0.7
 
 
 def parse_docling_pdf(
@@ -59,9 +59,11 @@ def map_docling_result(
                 item, result, remaining_table_fallbacks
             )
             if fallback_index is not None:
-                _, _, text = remaining_table_fallbacks.pop(fallback_index)
-                table_markdown = text
-                metadata = {"ocr": False}
+                _, _, native_markdown = remaining_table_fallbacks.pop(fallback_index)
+                if not text:
+                    text = native_markdown
+                    table_markdown = native_markdown
+                    metadata = {"ocr": False}
             elif not text:
                 warnings.append("advanced_parser_incomplete")
         if not text:
@@ -186,7 +188,7 @@ def _matching_native_table_index(
             if overlap > best_overlap:
                 best_index = index
                 best_overlap = overlap
-    return best_index if best_overlap >= MIN_TABLE_BBOX_OVERLAP else None
+    return best_index if best_overlap >= MIN_TABLE_BBOX_IOU else None
 
 
 def _item_top_left_bboxes(item, result):
@@ -214,11 +216,18 @@ def _item_top_left_bboxes(item, result):
 
 
 def _bbox_overlap_ratio(first, second) -> float:
+    first_width = first[2] - first[0]
+    first_height = first[3] - first[1]
+    second_width = second[2] - second[0]
+    second_height = second[3] - second[1]
+    if min(first_width, first_height, second_width, second_height) <= 0:
+        return 0.0
+
     width = max(0.0, min(first[2], second[2]) - max(first[0], second[0]))
     height = max(0.0, min(first[3], second[3]) - max(first[1], second[1]))
-    first_area = (first[2] - first[0]) * (first[3] - first[1])
-    second_area = (second[2] - second[0]) * (second[3] - second[1])
-    return width * height / min(first_area, second_area)
+    intersection = width * height
+    union = first_width * first_height + second_width * second_height - intersection
+    return intersection / union
 
 
 def _docling_version() -> str:

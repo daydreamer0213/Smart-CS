@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 
 class _BBox:
     def __init__(self, left, top, right, bottom):
@@ -135,6 +137,37 @@ def test_docling_result_uses_controlled_native_markdown_for_an_empty_table():
     assert table.table_markdown == table.text
     assert table.metadata == {"ocr": False}
     assert document.quality.status == "passed"
+
+
+def test_non_empty_docling_table_keeps_its_markdown_after_native_match_is_consumed():
+    from app.core.parsing.docling_parser import map_docling_result
+
+    docling_markdown = "| Docling |\n| --- |\n| kept |"
+    document = map_docling_result(
+        _result(
+            items=[
+                _Item(
+                    "table",
+                    "",
+                    [1],
+                    markdown=docling_markdown,
+                    bboxes=[_BBox(70, 100, 430, 270)],
+                )
+            ],
+            page_count=1,
+        ),
+        expected_page_count=1,
+        parser_version="2.113.0",
+        table_fallbacks=[
+            (1, (72, 110, 430, 270), "| Native |\n| --- |\n| ignored |")
+        ],
+    )
+
+    assert document.elements[0].text == docling_markdown
+    assert document.elements[0].table_markdown == docling_markdown
+    assert document.elements[0].metadata == {"ocr": True}
+    assert document.quality.status == "passed"
+    assert document.quality.warnings == []
 
 
 def test_docling_result_blocks_an_empty_table_without_a_fallback():
@@ -276,6 +309,57 @@ def test_incidental_bbox_overlap_does_not_replace_a_docling_table():
     assert document.quality.warnings == ["advanced_parser_incomplete"]
 
 
+def test_contained_small_bbox_does_not_match_a_large_docling_table():
+    from app.core.parsing.docling_parser import map_docling_result
+
+    document = map_docling_result(
+        _result(
+            items=[
+                _Item("text", "Body text", [1]),
+                _Item(
+                    "table",
+                    "",
+                    [1],
+                    markdown="",
+                    bboxes=[_BBox(0, 0, 100, 100)],
+                ),
+            ],
+            page_count=1,
+        ),
+        expected_page_count=1,
+        parser_version="2.113.0",
+        table_fallbacks=[
+            (1, (10, 10, 20, 20), "| Wrong |\n| --- |\n| contained |")
+        ],
+    )
+
+    assert [item.text for item in document.elements] == ["Body text"]
+    assert document.quality.status == "review_required"
+    assert document.quality.warnings == ["advanced_parser_incomplete"]
+
+
+def test_bbox_overlap_ratio_is_iou_for_a_contained_box():
+    from app.core.parsing.docling_parser import _bbox_overlap_ratio
+
+    assert _bbox_overlap_ratio((0, 0, 100, 100), (10, 10, 20, 20)) == pytest.approx(
+        0.01
+    )
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        ((0, 0, 0, 10), (0, 0, 10, 10)),
+        ((10, 0, 0, 10), (0, 0, 10, 10)),
+        ((0, 0, 10, 10), (5, 5, 5, 5)),
+    ],
+)
+def test_bbox_overlap_ratio_returns_zero_for_non_positive_area(first, second):
+    from app.core.parsing.docling_parser import _bbox_overlap_ratio
+
+    assert _bbox_overlap_ratio(first, second) == 0
+
+
 def test_runtime_validation_rejects_tempfile_directory_outside_parser_temp(
     monkeypatch, tmp_path
 ):
@@ -301,8 +385,6 @@ def test_runtime_validation_rejects_tempfile_directory_outside_parser_temp(
     monkeypatch.setattr(docling_parser.settings, "tesseract_cmd", str(tesseract))
     monkeypatch.setattr(docling_parser.settings, "tessdata_prefix", str(tessdata))
     monkeypatch.setattr(docling_parser.tempfile, "gettempdir", lambda: str(tmp_path))
-
-    import pytest
 
     with pytest.raises(RuntimeError, match="Docling runtime is unavailable"):
         docling_parser._validate_runtime_paths()

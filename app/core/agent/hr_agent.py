@@ -99,7 +99,7 @@ def _render_authorized_citations(reply: str, sources: list[dict]) -> str:
         return _UNVERIFIED_REPLY
     if _has_authorized_citations(reply, sources):
         return reply
-    if re.search(r"\[source:[^\]\s]+\]", reply):
+    if "[source:" in reply:
         return _UNVERIFIED_REPLY
     citations = " ".join(f"[source:{source['source_id']}]" for source in sources)
     return f"{reply.rstrip()}\n\n{citations}"

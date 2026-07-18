@@ -4,13 +4,21 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 ElementType = Literal["title", "heading", "paragraph", "list", "table", "image"]
 QualityStatus = Literal["passed", "review_required", "failed"]
+ParseWarning = Literal[
+    "advanced_parser_incomplete",
+    "encrypted_input",
+    "indexing_blocked",
+    "low_ocr_confidence",
+    "missing_page_coverage",
+    "parser_exception",
+]
 MetadataScalar = str | int | float | bool | None
 
 
 class ParseQuality(BaseModel):
     status: QualityStatus = "passed"
     metrics: dict[str, int | float] = Field(default_factory=dict)
-    warnings: list[str] = Field(default_factory=list)
+    warnings: list[ParseWarning] = Field(default_factory=list)
 
 
 class ParsedElement(BaseModel):

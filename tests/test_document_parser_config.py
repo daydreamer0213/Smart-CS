@@ -9,6 +9,7 @@ from app.config import Settings
 def test_docling_requirements_pin_verified_windows_cpu_pair():
     requirements = (Path(__file__).parents[1] / "requirements-docling.txt").read_text()
 
+    assert "opencv-python-headless>=4.6.0.66,<5.0.0.0" in requirements
     assert "torch==2.12.1" in requirements
     assert "torchvision==0.27.1" in requirements
 
@@ -21,8 +22,8 @@ def test_document_parser_defaults_keep_large_artifacts_under_d_devdata_root():
     assert settings.docling_artifacts_path == "D:/DevData/smartcs/docling/artifacts"
     assert settings.hf_home == "D:/DevData/smartcs/huggingface"
     assert settings.torch_home == "D:/DevData/smartcs/torch"
-    assert settings.tesseract_cmd == "D:/DevData/smartcs/tesseract/tesseract.exe"
-    assert settings.tessdata_prefix == "D:/DevData/smartcs/tesseract/tessdata/"
+    assert settings.tesseract_cmd == "D:/DevData/smartcs/tesseract-env/Library/bin/tesseract.exe"
+    assert settings.tessdata_prefix == "D:/DevData/smartcs/tesseract-env/share/tessdata/"
     assert settings.docling_device == "cpu"
     assert settings.docling_num_threads == 4
 

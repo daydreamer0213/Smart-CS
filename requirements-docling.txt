@@ -1,5 +1,7 @@
 # Optional PDF parsing with local Docling models.
 docling-slim[format-pdf,models-local]>=2.113,<2.114
+# Required by docling-ibm-models TableFormer; use the non-GUI build on servers.
+opencv-python-headless>=4.6.0.66,<5.0.0.0
 # Verified Windows CPU pair for the SmartCS conda environment.
 torch==2.12.1
 torchvision==0.27.1

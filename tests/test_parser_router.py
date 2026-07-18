@@ -62,24 +62,47 @@ def test_structured_clean_pdf_preserves_each_page_and_route_metadata():
 
 
 @pytest.mark.parametrize("filename", ["scanned_policy.pdf", "mixed_policy.pdf", "leave_table.pdf", "two_column_policy.pdf"])
-def test_structured_advanced_pdf_requires_adapter_without_plain_text_fallback(filename):
-    from app.core.parsing.router import AdvancedParserRequired, parse_structured_file
+def test_structured_advanced_pdf_uses_adapter_without_plain_text_fallback(monkeypatch, filename):
+    from app.core.parsing.contracts import ParsedDocument, ParsedElement
+    from app.core.parsing import docling_parser
+    from app.core.parsing.router import parse_structured_file
 
-    with pytest.raises(AdvancedParserRequired, match="advanced parser required") as error:
-        parse_structured_file(filename, (FIXTURES / filename).read_bytes())
+    calls = []
 
-    assert error.value.decision.reason.value in {
+    def parse_advanced(name, data, *, expected_page_count):
+        calls.append((name, data, expected_page_count))
+        return ParsedDocument(
+            parser_name="docling",
+            parser_version="2.113.0",
+            page_count=expected_page_count,
+            elements=[ParsedElement(text="Advanced result", element_type="paragraph", page_start=1)],
+        )
+
+    monkeypatch.setattr(docling_parser, "parse_docling_pdf", parse_advanced)
+
+    document = parse_structured_file(filename, (FIXTURES / filename).read_bytes())
+
+    assert calls == [(filename, (FIXTURES / filename).read_bytes(), document.page_count)]
+    assert document.parser_name == "docling"
+    assert document.metadata["route"] == "advanced"
+    assert document.metadata["route_reason"] in {
         "sparse_text_page", "table_layout", "multi_column_layout",
     }
 
 
-def test_structured_encrypted_pdf_is_rejected_without_raw_parser_error():
-    from app.core.parsing.router import PdfRejectedError, parse_structured_file
+def test_structured_encrypted_pdf_returns_controlled_quality_without_parser_error():
+    from app.core.parsing.router import parse_structured_file
 
-    with pytest.raises(PdfRejectedError, match="PDF rejected: encrypted"):
-        parse_structured_file(
-            "encrypted_policy.pdf", (FIXTURES / "encrypted_policy.pdf").read_bytes()
-        )
+    document = parse_structured_file(
+        "encrypted_policy.pdf", (FIXTURES / "encrypted_policy.pdf").read_bytes()
+    )
+
+    assert document.page_count == 1
+    assert document.elements == []
+    assert document.quality.status == "failed"
+    assert "encrypted_input" in document.quality.warnings
+    assert "parser_exception" not in document.quality.warnings
+    assert document.metadata == {"route": "rejected", "route_reason": "encrypted"}
 
 
 def test_one_substantial_block_per_column_routes_advanced():

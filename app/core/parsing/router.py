@@ -1,4 +1,4 @@
-"""Deterministic parser routing without an optional advanced-parser dependency."""
+"""Deterministic parser routing with an optional advanced PDF adapter."""
 
 from dataclasses import dataclass
 from enum import Enum
@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.core.parsing.contracts import ParsedDocument
 from app.core.parsing.native_parser import parse_native_file
+from app.core.parsing.quality import evaluate_parse_quality
 
 
 class PdfRoute(str, Enum):
@@ -30,12 +31,6 @@ class PdfRouteDecision:
     route: PdfRoute
     reason: PdfRouteReason
     page_count: int
-
-
-class AdvancedParserRequired(RuntimeError):
-    def __init__(self, decision: PdfRouteDecision):
-        self.decision = decision
-        super().__init__(f"advanced parser required: {decision.reason.value}")
 
 
 class PdfRejectedError(ValueError):
@@ -100,8 +95,32 @@ def parse_structured_file(filename: str, data: bytes) -> ParsedDocument:
         return parse_native_file(filename, data)
     decision = inspect_pdf(data)
     if decision.route is PdfRoute.ADVANCED:
-        raise AdvancedParserRequired(decision)
+        from app.core.parsing.docling_parser import parse_docling_pdf
+
+        document = parse_docling_pdf(
+            filename, data, expected_page_count=decision.page_count
+        )
+        document.metadata = {
+            "route": decision.route.value,
+            "route_reason": decision.reason.value,
+        }
+        return document
     if decision.route is PdfRoute.REJECTED:
+        if decision.reason is PdfRouteReason.ENCRYPTED:
+            document = ParsedDocument(
+                parser_name="pdf-router",
+                parser_version="1",
+                page_count=decision.page_count,
+                elements=[],
+                metadata={
+                    "route": decision.route.value,
+                    "route_reason": decision.reason.value,
+                },
+            )
+            document.quality = evaluate_parse_quality(
+                document, warnings=["encrypted_input"]
+            )
+            return document
         raise PdfRejectedError(decision)
     document = parse_native_file(filename, data)
     document.metadata = {"route": decision.route.value, "route_reason": decision.reason.value}

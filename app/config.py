@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     docling_artifacts_path: str = "D:/DevData/smartcs/docling/artifacts"
     hf_home: str = "D:/DevData/smartcs/huggingface"
     torch_home: str = "D:/DevData/smartcs/torch"
-    tesseract_cmd: str = "D:/DevData/smartcs/tesseract/tesseract.exe"
-    tessdata_prefix: str = "D:/DevData/smartcs/tesseract/tessdata/"
+    tesseract_cmd: str = "D:/DevData/smartcs/tesseract-env/Library/bin/tesseract.exe"
+    tessdata_prefix: str = "D:/DevData/smartcs/tesseract-env/share/tessdata/"
     docling_device: Literal["cpu"] = "cpu"
     docling_num_threads: int = Field(default=4, ge=1)
 

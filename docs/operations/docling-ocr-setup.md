@@ -16,6 +16,7 @@ directories if they do not already exist.
 
 ```powershell
 $env:PIP_CACHE_DIR = 'D:\DevData\smartcs\pip'
+$env:CONDA_PKGS_DIRS = 'D:\DevData\conda-pkgs'
 $env:PARSER_DATA_ROOT = 'D:\DevData\smartcs'
 $env:PARSER_TEMP_DIR = 'D:\DevData\smartcs\tmp'
 $env:TEMP = $env:PARSER_TEMP_DIR
@@ -23,13 +24,13 @@ $env:TMP = $env:PARSER_TEMP_DIR
 $env:DOCLING_ARTIFACTS_PATH = 'D:\DevData\smartcs\docling\artifacts'
 $env:HF_HOME = 'D:\DevData\smartcs\huggingface'
 $env:TORCH_HOME = 'D:\DevData\smartcs\torch'
-$env:TESSERACT_CMD = 'D:\DevData\smartcs\tesseract\tesseract.exe'
-$env:TESSDATA_PREFIX = 'D:\DevData\smartcs\tesseract\tessdata\'
+$env:TESSERACT_CMD = 'D:\DevData\smartcs\tesseract-env\Library\bin\tesseract.exe'
+$env:TESSDATA_PREFIX = 'D:\DevData\smartcs\tesseract-env\share\tessdata\'
 $env:DOCLING_DEVICE = 'cpu'
 $env:DOCLING_NUM_THREADS = '4'
 $env:OMP_NUM_THREADS = '4'
 
-New-Item -ItemType Directory -Force $env:PIP_CACHE_DIR, $env:PARSER_TEMP_DIR, $env:DOCLING_ARTIFACTS_PATH, $env:HF_HOME, $env:TORCH_HOME, $env:TESSDATA_PREFIX | Out-Null
+New-Item -ItemType Directory -Force $env:PIP_CACHE_DIR, $env:CONDA_PKGS_DIRS, $env:PARSER_TEMP_DIR, $env:DOCLING_ARTIFACTS_PATH, $env:HF_HOME, $env:TORCH_HOME, $env:TESSDATA_PREFIX | Out-Null
 $resolvedTemp = & 'D:\2026.07.09\conda-envs\smart-cs\python.exe' -c "import tempfile; print(tempfile.gettempdir())"
 if ((Resolve-Path $resolvedTemp).Path -ne (Resolve-Path $env:PARSER_TEMP_DIR).Path) {
     throw "Python tempfile directory does not resolve to PARSER_TEMP_DIR: $resolvedTemp"
@@ -59,7 +60,8 @@ After reviewing the resolver output, install the optional package:
 
 The optional requirement is deliberately limited to Docling PDF support and
 local models. It does not select an OCR backend; OCR remains the configured
-Tesseract CLI only.
+Tesseract CLI only. The headless OpenCV dependency is required by Docling's
+TableFormer model and does not provide or select an OCR backend.
 
 `requirements-docling.txt` pins `torch==2.12.1` and
 `torchvision==0.27.1`, the verified Windows CPU pair for this SmartCS conda
@@ -74,19 +76,30 @@ After Docling is installed, download the default local models directly into
 the configured artifact directory:
 
 ```powershell
-& 'D:\2026.07.09\conda-envs\smart-cs\Scripts\docling-tools.exe' models download --output-dir $env:DOCLING_ARTIFACTS_PATH
+& 'D:\2026.07.09\conda-envs\smart-cs\Scripts\docling-tools.exe' models download layout tableformer --output-dir $env:DOCLING_ARTIFACTS_PATH
 ```
 
 Use `--all` only when a later parser feature explicitly needs every optional
-model. The future adapter must pass `DOCLING_ARTIFACTS_PATH` to Docling's PDF
-pipeline options.
+model. The adapter passes `DOCLING_ARTIFACTS_PATH` to Docling's PDF pipeline
+options and does not download models while handling a request.
 
 ## Install and verify Tesseract
 
-Install a Windows Tesseract distribution into
-`D:\DevData\smartcs\tesseract` and place both `eng.traineddata` and
-`chi_sim.traineddata` under `D:\DevData\smartcs\tesseract\tessdata`. Then
-verify the executable and require both languages:
+Use the verified local Tesseract environment at
+`D:\DevData\smartcs\tesseract-env`, where the executable is under
+`Library\bin` and both `eng.traineddata` and `chi_sim.traineddata` are under
+`share\tessdata`. Create it from conda-forge with all packages and caches on
+`D:`. `libcurl` is explicit because the Windows Tesseract build links to
+`libcurl.dll` but did not pull that runtime into the initial environment:
+
+```powershell
+& 'D:\2026.07.09\conda\Scripts\conda.exe' create `
+    --override-channels -c conda-forge `
+    -p 'D:\DevData\smartcs\tesseract-env' `
+    'tesseract=5.5.2' libcurl -y
+```
+
+Then verify the executable and require both languages:
 
 ```powershell
 & $env:TESSERACT_CMD --version

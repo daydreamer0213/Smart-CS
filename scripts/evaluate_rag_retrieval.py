@@ -24,6 +24,15 @@ def load_rag_manifest(fixture_dir: Path, manifest_path: Path | None = None) -> d
     )
     fixtures = {item["id"]: item for item in document_manifest["fixtures"]}
     queries = raw_manifest["queries"]
+    query_labels = {
+        (item.get("fixture_id"), item.get("required_text")) for item in queries
+    }
+    indexable_fixture_ids = {
+        fixture_id
+        for fixture_id, fixture in fixtures.items()
+        if fixture.get("expected_indexable") is True
+    }
+    query_fixture_ids = {item.get("fixture_id") for item in queries}
 
     if (
         raw_manifest.get("top_k") != 3
@@ -33,6 +42,10 @@ def load_rag_manifest(fixture_dir: Path, manifest_path: Path | None = None) -> d
         or len({item.get("id") for item in queries}) != 12
     ):
         raise ValueError("Invalid RAG evaluation manifest")
+    if len(query_labels) != len(queries):
+        raise ValueError("RAG queries must use unique fixture facts")
+    if query_fixture_ids != indexable_fixture_ids:
+        raise ValueError("RAG queries must cover all indexable fixtures")
 
     resolved_queries = []
     for query in queries:
@@ -51,7 +64,7 @@ def load_rag_manifest(fixture_dir: Path, manifest_path: Path | None = None) -> d
                 "id": query["id"],
                 "question": query["question"],
                 "expected": {
-                    "filename": fixture["filename"],
+                    "title": fixture["filename"],
                     "required_text": required_text,
                     "page_start": provenance["page_start"],
                     "page_end": provenance["page_end"],
@@ -71,7 +84,7 @@ def load_rag_manifest(fixture_dir: Path, manifest_path: Path | None = None) -> d
 
 def _matches_expected(result: dict[str, Any], expected: dict[str, Any]) -> bool:
     return (
-        result.get("filename") == expected["filename"]
+        result.get("title") == expected["title"]
         and _normalized_text(expected["required_text"]) in _normalized_text(result.get("content"))
     )
 

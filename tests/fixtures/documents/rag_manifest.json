@@ -8,7 +8,7 @@
     {"id": "annual-leave-ten-years", "question": "工龄满十年每年有多少天年假？", "fixture_id": "clean-policy", "required_text": "工龄满十年的员工每年享有十天年假。"},
     {"id": "annual-leave-application", "question": "年假需要提前多久申请？", "fixture_id": "repeated-headers", "required_text": "年假申请应提前三个工作日提交。"},
     {"id": "sick-leave-proof", "question": "请病假需要提供什么材料？", "fixture_id": "repeated-headers", "required_text": "病假应提供医疗证明。"},
-    {"id": "marriage-leave", "question": "婚假可以提现吗？", "fixture_id": "repeated-headers", "required_text": "婚假应一次性休完。"},
+    {"id": "marriage-leave", "question": "婚假需要一次性休完吗？", "fixture_id": "repeated-headers", "required_text": "婚假应一次性休完。"},
     {"id": "annual-leave-twenty-years", "question": "工作二十年以上有几天年假？", "fixture_id": "leave-table", "required_text": "15天"},
     {"id": "childcare-leave", "question": "育儿假每年有几天？", "fixture_id": "scanned-policy", "required_text": "育儿假每年五天。"},
     {"id": "overseas-accommodation", "question": "驻外员工的住宿怎么安排？", "fixture_id": "mixed-policy", "required_text": "驻外员工住宿由公司统一安排。"},

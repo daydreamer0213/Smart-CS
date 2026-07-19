@@ -31,7 +31,7 @@ def lightweight_parser(monkeypatch):
     fixtures = {item["filename"]: item for item in document_manifest["fixtures"]}
     parsed_filenames = []
 
-    def parse(filename, _data):
+    def parse(filename, _data, _expected_route):
         parsed_filenames.append(filename)
         fixture = fixtures[filename]
         elements = [
@@ -73,7 +73,7 @@ def lightweight_parser(monkeypatch):
             elements=elements,
         )
 
-    monkeypatch.setattr(rag_evaluation, "parse_structured_file", parse)
+    monkeypatch.setattr(rag_evaluation, "parse_fixture", parse)
     return parsed_filenames
 
 
@@ -234,10 +234,62 @@ def test_run_evaluation_rejects_non_d_work_dir_on_windows(tmp_path, monkeypatch)
         rag_evaluation.run_evaluation(FIXTURE_DIR, tmp_path, "test")
 
 
-def test_run_evaluation_releases_sqlite_when_parsing_fails(d_work_dir, monkeypatch):
+def test_parse_fixture_uses_spawn_worker_for_advanced_route(monkeypatch):
+    parsed = ParsedDocument(
+        parser_name="worker-parser",
+        parser_version="1",
+        page_count=1,
+        elements=[ParsedElement(text="advanced", element_type="paragraph", page_start=1)],
+    )
+    observed = []
+
+    def spawn_worker(filename, data):
+        observed.append(("worker", filename, data))
+        return parsed
+
+    monkeypatch.setattr(rag_evaluation, "_parse_advanced_in_spawn_worker", spawn_worker)
     monkeypatch.setattr(
         rag_evaluation,
         "parse_structured_file",
+        lambda *_args: pytest.fail("advanced parsing must not run in the parent process"),
+    )
+
+    actual = rag_evaluation.parse_fixture("advanced.pdf", b"pdf", "advanced")
+
+    assert actual is parsed
+    assert observed == [("worker", "advanced.pdf", b"pdf")]
+
+
+def test_parse_fixture_keeps_native_route_in_current_process(monkeypatch):
+    parsed = ParsedDocument(
+        parser_name="native-parser",
+        parser_version="1",
+        page_count=1,
+        elements=[ParsedElement(text="native", element_type="paragraph", page_start=1)],
+    )
+    observed = []
+
+    def parse(filename, data):
+        observed.append(("parent", filename, data))
+        return parsed
+
+    monkeypatch.setattr(rag_evaluation, "parse_structured_file", parse)
+    monkeypatch.setattr(
+        rag_evaluation,
+        "_parse_advanced_in_spawn_worker",
+        lambda *_args: pytest.fail("native parsing must not spawn a worker"),
+    )
+
+    actual = rag_evaluation.parse_fixture("native.pdf", b"pdf", "native")
+
+    assert actual is parsed
+    assert observed == [("parent", "native.pdf", b"pdf")]
+
+
+def test_run_evaluation_releases_sqlite_when_parsing_fails(d_work_dir, monkeypatch):
+    monkeypatch.setattr(
+        rag_evaluation,
+        "parse_fixture",
         lambda *_args: (_ for _ in ()).throw(RuntimeError("parse failed")),
     )
 

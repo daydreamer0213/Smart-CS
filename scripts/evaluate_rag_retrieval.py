@@ -1,11 +1,37 @@
-"""Deterministic metric contract for the M2-5 RAG retrieval gate."""
+"""Deterministic real-corpus evaluator for the M2-5 RAG retrieval gate."""
 
 from __future__ import annotations
 
+import argparse
+import asyncio
+import hashlib
 import json
+import os
+import platform
+import sys
 import unicodedata
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
+from uuid import uuid4
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+import app.core.retrieval_module as retrieval_module
+from app.core.agent.tools import _runtime as _agent_runtime
+from app.core.agent.tools import search_knowledge, set_runtime
+from app.core.embedding.hash_provider import HashEmbeddingProvider
+from app.core.parsing.quality import evaluate_parse_quality
+from app.core.parsing.router import parse_structured_file
+from app.core.parsing.runtime import configure_parser_runtime
+from app.core.parsing.structured_chunker import CHUNKER_VERSION, chunk_document
+from app.core.retrieval.bm25_index import BM25IndexManager
+from app.core.retrieval.vector_store import VectorStore
+from app.models import Base, Document, DocumentChunk, DocumentFamily, Tenant
 
 
 def _normalized_text(value: object) -> str:
@@ -116,6 +142,11 @@ def evaluate_results(manifest: dict, results_by_query: dict[str, list[dict]]) ->
         if rank is None:
             failed_query_ids.append(query["id"])
             reciprocal_ranks.append(0.0)
+            rows.append({
+                "query_id": query["id"],
+                "rank": None,
+                "retrievers": [],
+            })
             continue
         result = results_by_query[query["id"]][rank - 1]
         provenance_passed = _has_expected_provenance(result, expected)
@@ -150,3 +181,236 @@ def evaluate_results(manifest: dict, results_by_query: dict[str, list[dict]]) ->
             "gate": "passed" if gate_passed else "failed",
         },
     }
+
+
+def _require_d_drive(path: Path, label: str) -> Path:
+    resolved = Path(path).resolve()
+    if os.name == "nt" and resolved.drive.upper() != "D:":
+        raise ValueError(f"{label} must be on D: on Windows")
+    return resolved
+
+
+def _load_corpus_manifest(fixture_dir: Path) -> tuple[dict, bytes, bytes]:
+    document_bytes = (fixture_dir / "manifest.json").read_bytes()
+    rag_bytes = (fixture_dir / "rag_manifest.json").read_bytes()
+    return json.loads(document_bytes), document_bytes, rag_bytes
+
+
+async def _index_and_search(
+    *,
+    session,
+    tenant: Tenant,
+    indexed_chunks: list[tuple[DocumentChunk, str]],
+    manifest: dict,
+    embedding: HashEmbeddingProvider,
+    vector_store: VectorStore,
+    bm25: BM25IndexManager,
+) -> dict[str, list[dict]]:
+    texts = [text for _, text in indexed_chunks]
+    vectors = await embedding.embed(texts)
+    for (chunk, contextualized_content), vector in zip(indexed_chunks, vectors):
+        vector_store.add(
+            tenant.slug,
+            chunk.id,
+            vector,
+            metadata={"source": "document", "document_id": chunk.document_id},
+        )
+        bm25.add(tenant.slug, chunk.id, chunk.content)
+
+    set_runtime(tenant.slug, session, role="employee", tenant_id=tenant.id)
+    results_by_query = {}
+    for query in manifest["queries"]:
+        payload = json.loads(
+            await search_knowledge.ainvoke({"query": query["question"]})
+        )
+        results_by_query[query["id"]] = payload.get("results", [])
+    return results_by_query
+
+
+def run_evaluation(
+    fixture_dir: Path,
+    work_dir: Path,
+    environment_label: str,
+) -> dict:
+    """Build an isolated governed corpus and run the production retrieval tool."""
+    fixture_dir = Path(fixture_dir).resolve()
+    work_dir = _require_d_drive(work_dir, "work-dir")
+    work_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = work_dir / f"run-{uuid4().hex}"
+    run_dir.mkdir()
+    database_path = run_dir / "evaluation.db"
+    chroma_path = run_dir / "chroma"
+
+    configure_parser_runtime()
+    corpus_manifest, document_bytes, rag_bytes = _load_corpus_manifest(fixture_dir)
+    manifest = load_rag_manifest(fixture_dir)
+    indexable = [
+        item for item in corpus_manifest["fixtures"]
+        if item.get("expected_indexable") is True
+    ]
+    excluded_fixture_ids = [
+        item["id"] for item in corpus_manifest["fixtures"]
+        if item.get("expected_indexable") is not True
+    ]
+    if "encrypted-policy" not in excluded_fixture_ids:
+        raise ValueError("Encrypted fixture must be excluded")
+
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    tenant = Tenant(slug="m25-eval", name="M2-5 Evaluation")
+    session.add(tenant)
+    session.flush()
+
+    indexed_chunks: list[tuple[DocumentChunk, str]] = []
+    try:
+        for case in indexable:
+            filename = case["filename"]
+            data = (fixture_dir / filename).read_bytes()
+            parsed = parse_structured_file(filename, data)
+            quality = evaluate_parse_quality(
+                parsed,
+                warnings=parsed.quality.warnings,
+            )
+            if quality.status != "passed":
+                raise ValueError(f"Fixture {case['id']} failed the parse quality gate")
+            parsed_chunks = chunk_document(parsed, filename)
+            if not parsed_chunks:
+                raise ValueError(f"Fixture {case['id']} produced no chunks")
+
+            family = DocumentFamily(tenant_id=tenant.id, name=filename)
+            session.add(family)
+            session.flush()
+            document = Document(
+                tenant_id=tenant.id,
+                family_id=family.id,
+                filename=filename,
+                file_type=Path(filename).suffix.lstrip(".").lower(),
+                file_size=len(data),
+                file_hash=hashlib.sha256(data).hexdigest(),
+                chunk_count=len(parsed_chunks),
+                status="ready",
+                audience_roles=["employee"],
+                parser_name=parsed.parser_name,
+                parser_version=parsed.parser_version,
+                page_count=parsed.page_count,
+                parse_quality_status=quality.status,
+                parse_quality_details=quality.model_dump(),
+                version=1,
+                index_generation=1,
+                review_status="approved",
+                source_type="evaluation",
+                chunker_version=CHUNKER_VERSION,
+                embedding_provider="hash",
+                embedding_model="hash-64",
+            )
+            session.add(document)
+            session.flush()
+            family.current_document_id = document.id
+            for index, parsed_chunk in enumerate(parsed_chunks, start=1):
+                chunk = DocumentChunk(
+                    document_id=document.id,
+                    chunk_index=index,
+                    content=parsed_chunk.content,
+                    token_count=parsed_chunk.token_count,
+                    status="active",
+                    page_start=parsed_chunk.page_start,
+                    page_end=parsed_chunk.page_end,
+                    section_path=parsed_chunk.section_path,
+                    element_types=parsed_chunk.element_types,
+                    source_element_indexes=parsed_chunk.source_element_indexes,
+                    index_generation=1,
+                    chunker_version=CHUNKER_VERSION,
+                    embedding_model="hash-64",
+                )
+                session.add(chunk)
+                session.flush()
+                chunk.embedding_id = chunk.id
+                indexed_chunks.append((chunk, parsed_chunk.contextualized_content))
+        session.commit()
+
+        embedding = HashEmbeddingProvider(dim=64)
+        vector_store = VectorStore(str(chroma_path))
+        bm25 = BM25IndexManager()
+    except Exception:
+        session.close()
+        engine.dispose()
+        raise
+    previous_services = (
+        retrieval_module._vector_store,
+        retrieval_module._bm25_manager,
+        retrieval_module._embedding_provider,
+    )
+    previous_runtime = _agent_runtime.get()
+    retrieval_module.set_vector_store(vector_store)
+    retrieval_module.set_bm25_manager(bm25)
+    retrieval_module.set_embedding_provider(embedding)
+    try:
+        results_by_query = asyncio.run(_index_and_search(
+            session=session,
+            tenant=tenant,
+            indexed_chunks=indexed_chunks,
+            manifest=manifest,
+            embedding=embedding,
+            vector_store=vector_store,
+            bm25=bm25,
+        ))
+        metrics = evaluate_results(manifest, results_by_query)
+    finally:
+        bm25.remove_tenant(tenant.slug)
+        _agent_runtime.set(previous_runtime)
+        (
+            retrieval_module._vector_store,
+            retrieval_module._bm25_manager,
+            retrieval_module._embedding_provider,
+        ) = previous_services
+        session.close()
+        engine.dispose()
+
+    manifest_hash = hashlib.sha256(document_bytes + b"\0" + rag_bytes).hexdigest()
+    return {
+        "schema_version": 1,
+        "benchmark": "smartcs-rag-retrieval",
+        "run_context": {
+            "environment_label": environment_label,
+            "python_version": platform.python_version(),
+            "platform": platform.system(),
+            "manifest_sha256": manifest_hash,
+        },
+        "corpus": {
+            "fixture_count": len(corpus_manifest["fixtures"]),
+            "indexed_fixture_count": len(indexable),
+            "indexed_chunk_count": len(indexed_chunks),
+            "excluded_fixture_ids": excluded_fixture_ids,
+        },
+        "query_count": len(manifest["queries"]),
+        "retriever_profile": {
+            "embedding": "hash-64",
+            "vector": "chroma-cosine",
+            "lexical": "bm25",
+            "fusion": "rrf",
+            "top_k": manifest["top_k"],
+        },
+        **metrics,
+    }
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Evaluate SmartCS RAG retrieval")
+    parser.add_argument("--fixture-dir", type=Path, required=True)
+    parser.add_argument("--work-dir", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--environment-label", default="local-unspecified")
+    args = parser.parse_args(argv)
+    output = _require_d_drive(args.output, "output")
+    report = run_evaluation(args.fixture_dir, args.work_dir, args.environment_label)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return 0 if report["summary"]["gate"] == "passed" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

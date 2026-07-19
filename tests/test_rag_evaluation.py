@@ -1,12 +1,80 @@
 import json
+import shutil
+import uuid
 from pathlib import Path
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
+import scripts.evaluate_rag_retrieval as rag_evaluation
+from app.core.parsing.contracts import ParsedDocument, ParsedElement
+from app.models.document import Document, DocumentFamily
 from scripts.evaluate_rag_retrieval import evaluate_results, load_rag_manifest
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "documents"
+
+
+@pytest.fixture
+def d_work_dir():
+    path = Path("D:/DevData/smartcs/pytest-rag-eval") / uuid.uuid4().hex
+    yield path
+    shutil.rmtree(path, ignore_errors=True)
+
+
+@pytest.fixture
+def lightweight_parser(monkeypatch):
+    document_manifest = json.loads(
+        (FIXTURE_DIR / "manifest.json").read_text(encoding="utf-8")
+    )
+    fixtures = {item["filename"]: item for item in document_manifest["fixtures"]}
+    parsed_filenames = []
+
+    def parse(filename, _data):
+        parsed_filenames.append(filename)
+        fixture = fixtures[filename]
+        elements = [
+            ParsedElement(
+                text=item["fact"],
+                element_type="paragraph",
+                page_start=item["page_start"],
+                page_end=item["page_end"],
+                section_path=item["section_path"],
+            )
+            for item in fixture["expected_fact_provenance"]
+        ]
+        if filename == "clean_policy.pdf":
+            elements[0].text += " SENSITIVE_CHUNK_BODY sk-secret-value C:\\private"
+        page_count = max(
+            (item.page_end or 0 for item in elements),
+            default=0,
+        )
+        covered_pages = {
+            page
+            for item in elements
+            if item.page_start is not None and item.page_end is not None
+            for page in range(item.page_start, item.page_end + 1)
+        }
+        elements.extend(
+            ParsedElement(
+                text=f"第 {page} 页测试内容。",
+                element_type="paragraph",
+                page_start=page,
+                page_end=page,
+            )
+            for page in range(1, page_count + 1)
+            if page not in covered_pages
+        )
+        return ParsedDocument(
+            parser_name="test-parser",
+            parser_version="1",
+            page_count=page_count,
+            elements=elements,
+        )
+
+    monkeypatch.setattr(rag_evaluation, "parse_structured_file", parse)
+    return parsed_filenames
 
 
 def test_load_rag_manifest_defines_indexable_golden_queries():
@@ -147,3 +215,130 @@ def test_evaluate_results_fails_gate_when_one_recalled_result_has_wrong_provenan
     assert report["summary"]["provenance_accuracy"] == pytest.approx(11 / 12)
     assert report["summary"]["gate"] == "failed"
     assert report["failed_query_ids"] == [failed_query["id"]]
+
+
+def test_evaluate_results_keeps_one_sanitized_row_per_query_without_hits():
+    manifest = load_rag_manifest(FIXTURE_DIR)
+
+    report = evaluate_results(manifest, {})
+
+    assert len(report["results"]) == 12
+    assert all(item["rank"] is None for item in report["results"])
+    assert all(item["retrievers"] == [] for item in report["results"])
+
+
+def test_run_evaluation_rejects_non_d_work_dir_on_windows(tmp_path, monkeypatch):
+    monkeypatch.setattr(rag_evaluation.os, "name", "nt")
+
+    with pytest.raises(ValueError, match="D:"):
+        rag_evaluation.run_evaluation(FIXTURE_DIR, tmp_path, "test")
+
+
+def test_run_evaluation_releases_sqlite_when_parsing_fails(d_work_dir, monkeypatch):
+    monkeypatch.setattr(
+        rag_evaluation,
+        "parse_structured_file",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("parse failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="parse failed"):
+        rag_evaluation.run_evaluation(FIXTURE_DIR, d_work_dir, "pytest")
+
+    shutil.rmtree(d_work_dir)
+    assert not d_work_dir.exists()
+
+
+def test_run_evaluation_uses_governed_documents_and_real_tool_boundary(
+    d_work_dir, lightweight_parser, monkeypatch,
+):
+    original_tool = rag_evaluation.search_knowledge
+    observed = {"queries": [], "governance_checked": False}
+
+    class SearchToolSpy:
+        async def ainvoke(self, payload):
+            observed["queries"].append(payload["query"])
+            runtime = rag_evaluation._agent_runtime.get()
+            session = runtime["db_session"]
+            families = session.query(DocumentFamily).all()
+            documents = session.query(Document).all()
+            assert runtime["role"] == "employee"
+            assert families
+            assert all(document.status == "ready" for document in documents)
+            assert all(document.review_status == "approved" for document in documents)
+            assert all(
+                family.current_document_id
+                == next(document.id for document in documents if document.family_id == family.id)
+                for family in families
+            )
+            observed["governance_checked"] = True
+            return await original_tool.ainvoke(payload)
+
+    monkeypatch.setattr(rag_evaluation, "search_knowledge", SearchToolSpy())
+
+    report = rag_evaluation.run_evaluation(FIXTURE_DIR, d_work_dir, "pytest")
+
+    assert "encrypted_policy.pdf" not in lightweight_parser
+    assert report["corpus"]["excluded_fixture_ids"] == ["encrypted-policy"]
+    assert report["corpus"]["indexed_fixture_count"] == 8
+    assert observed["governance_checked"] is True
+    assert len(observed["queries"]) == report["query_count"] == 12
+    assert report["retriever_profile"] == {
+        "embedding": "hash-64",
+        "vector": "chroma-cosine",
+        "lexical": "bm25",
+        "fusion": "rrf",
+        "top_k": 3,
+    }
+
+    run_dirs = list(d_work_dir.iterdir())
+    assert len(run_dirs) == 1
+    database_path = run_dirs[0] / "evaluation.db"
+    assert database_path.is_file()
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+    session = sessionmaker(bind=engine)()
+    try:
+        assert session.query(DocumentFamily).count() == 8
+        assert session.query(Document).count() == 8
+    finally:
+        session.close()
+        engine.dispose()
+
+    serialized = json.dumps(report, ensure_ascii=False)
+    assert "SENSITIVE_CHUNK_BODY" not in serialized
+    assert "sk-secret-value" not in serialized
+    assert str(FIXTURE_DIR.resolve()) not in serialized
+    assert str(d_work_dir.resolve()) not in serialized
+
+
+def test_cli_rejects_non_d_output_on_windows(d_work_dir, tmp_path, monkeypatch):
+    monkeypatch.setattr(rag_evaluation.os, "name", "nt")
+
+    with pytest.raises(ValueError, match="D:"):
+        rag_evaluation.main([
+            "--fixture-dir", str(FIXTURE_DIR),
+            "--work-dir", str(d_work_dir),
+            "--output", str(tmp_path / "report.json"),
+            "--environment-label", "pytest",
+        ])
+
+
+@pytest.mark.parametrize(("gate", "expected_exit"), [("passed", 0), ("failed", 1)])
+def test_cli_writes_report_and_returns_gate_exit_code(
+    gate, expected_exit, d_work_dir, monkeypatch,
+):
+    output = d_work_dir / "report.json"
+    monkeypatch.setattr(
+        rag_evaluation,
+        "run_evaluation",
+        lambda *_args: {"summary": {"gate": gate}},
+    )
+
+    exit_code = rag_evaluation.main([
+        "--fixture-dir", str(FIXTURE_DIR),
+        "--work-dir", str(d_work_dir / "runs"),
+        "--output", str(output),
+        "--environment-label", "pytest",
+    ])
+
+    assert exit_code == expected_exit
+    assert json.loads(output.read_text(encoding="utf-8"))["summary"]["gate"] == gate

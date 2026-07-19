@@ -1,10 +1,11 @@
 """Security regression tests for the current public API surface."""
 
+from datetime import date, timedelta
 import json
 
 from app.core.auth.security import hash_password
 from app.core.auth.token import create_access_token
-from app.models.document import Document, DocumentChunk
+from app.models.document import Document, DocumentChunk, DocumentFamily
 from app.models.user import User
 
 
@@ -151,6 +152,126 @@ async def test_search_filters_cross_tenant_document_chunk_ids(db, test_tenant, m
         assert result["result_count"] == 1
     finally:
         db.rollback()
+
+
+async def test_search_enforces_governed_publication_lifecycle(
+    db, test_tenant, monkeypatch,
+):
+    from app.core.agent.hr_agent import search_hr_knowledge, set_hr_runtime
+
+    employee = _user(db, test_tenant, "governed-search-employee@example.com")
+
+    current_family = DocumentFamily(tenant_id=test_tenant.id, name="Current policy")
+    db.add(current_family)
+    db.flush()
+    old = Document(
+        tenant_id=test_tenant.id,
+        family_id=current_family.id,
+        filename="old.txt",
+        file_type="txt",
+        file_hash="governed-old",
+        status="ready",
+        review_status="approved",
+        version=1,
+    )
+    current = Document(
+        tenant_id=test_tenant.id,
+        family_id=current_family.id,
+        filename="current.txt",
+        file_type="txt",
+        file_hash="governed-current",
+        status="ready",
+        review_status="approved",
+        version=2,
+        effective_date=date.today(),
+    )
+    db.add_all([old, current])
+    db.flush()
+    current_family.current_document_id = current.id
+
+    governed = [old, current]
+    for name, review_status, effective, expiry, roles in [
+        ("pending", "pending_review", None, None, []),
+        ("rejected", "rejected", None, None, []),
+        ("future", "approved", date.today() + timedelta(days=1), None, []),
+        ("expired", "approved", None, date.today() - timedelta(days=1), []),
+        ("restricted", "approved", None, None, ["admin"]),
+    ]:
+        family = DocumentFamily(tenant_id=test_tenant.id, name=f"{name} policy")
+        db.add(family)
+        db.flush()
+        document = Document(
+            tenant_id=test_tenant.id,
+            family_id=family.id,
+            filename=f"{name}.txt",
+            file_type="txt",
+            file_hash=f"governed-{name}",
+            status="ready",
+            review_status=review_status,
+            effective_date=effective,
+            expiry_date=expiry,
+            audience_roles=roles,
+        )
+        db.add(document)
+        db.flush()
+        family.current_document_id = document.id
+        governed.append(document)
+
+    legacy = Document(
+        tenant_id=test_tenant.id,
+        filename="legacy.txt",
+        file_type="txt",
+        file_hash="governed-legacy",
+        status="ready",
+    )
+    db.add(legacy)
+    db.flush()
+    documents = [*governed, legacy]
+    chunks = []
+    for index, document in enumerate(documents):
+        chunk = DocumentChunk(
+            document_id=document.id,
+            chunk_index=0,
+            content=f"content-{document.filename}",
+            status="active",
+        )
+        db.add(chunk)
+        db.flush()
+        chunks.append(chunk)
+
+    class FakeEmbedding:
+        async def embed(self, _texts):
+            return [[0.0]]
+
+    class FakeVectorStore:
+        def search(self, *_args):
+            return [(chunk.id, 0.1) for chunk in chunks]
+
+    class FakeBm25:
+        def search(self, *_args):
+            return [(chunk.id, 1.0) for chunk in chunks]
+
+    monkeypatch.setattr(
+        "app.core.agent.tools.get_embedding_provider", lambda: FakeEmbedding()
+    )
+    monkeypatch.setattr(
+        "app.core.agent.tools.get_vector_store", lambda: FakeVectorStore()
+    )
+    monkeypatch.setattr(
+        "app.core.agent.tools.get_bm25_manager", lambda: FakeBm25()
+    )
+
+    set_hr_runtime(
+        db, test_tenant.id, test_tenant.slug, employee, "leave policy"
+    )
+    result = json.loads(
+        await search_hr_knowledge.ainvoke({"query": "leave policy"})
+    )
+
+    assert {source["title"] for source in result["sources"]} == {
+        "current.txt",
+        "legacy.txt",
+    }
 
 
 async def test_search_rejects_high_distance_vector_only_source(db, test_tenant, monkeypatch):
@@ -368,7 +489,7 @@ async def test_search_keeps_authorized_document_after_restricted_candidates(
 
     employee = _user(db, test_tenant, "authorized-result-employee@example.com")
     restricted_chunks = []
-    for index in range(5):
+    for index in range(20):
         document = Document(
             tenant_id=test_tenant.id,
             filename=f"admin-only-{index}.txt",

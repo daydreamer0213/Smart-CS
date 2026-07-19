@@ -10,10 +10,12 @@ provides the ``query`` / ``reason`` parameters.
 """
 
 import asyncio
+from datetime import date
 import json
 from contextvars import ContextVar
 
 from langchain_core.tools import tool
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.core.retrieval_module import (
@@ -24,7 +26,7 @@ from app.core.retrieval_module import (
 from app.core.retrieval.fusion import rrf_fusion
 
 MAX_VECTOR_DISTANCE = 0.5
-RETRIEVAL_CANDIDATE_LIMIT = 20
+RETRIEVAL_CANDIDATE_LIMIT = 100
 MAX_VISIBLE_RESULTS = 5
 
 # Runtime context — set before each graph invocation
@@ -91,7 +93,7 @@ async def search_knowledge(query: str) -> str:
         if not fused:
             return json.dumps({"status": "NO_RESULTS", "results": []})
 
-        from app.models.document import Document, DocumentChunk
+        from app.models.document import Document, DocumentChunk, DocumentFamily
         from app.models.knowledge import KnowledgeItem
 
         doc_ids = [r["doc_id"] for r in fused]
@@ -109,11 +111,28 @@ async def search_knowledge(query: str) -> str:
         document_chunks = (
             db_session.query(DocumentChunk, Document)
             .join(Document, DocumentChunk.document_id == Document.id)
+            .outerjoin(DocumentFamily, Document.family_id == DocumentFamily.id)
             .filter(
                 Document.tenant_id == tenant_id,
                 Document.status == "ready",
                 DocumentChunk.status == "active",
                 DocumentChunk.id.in_(doc_ids),
+                or_(
+                    Document.family_id.is_(None),
+                    and_(
+                        DocumentFamily.tenant_id == tenant_id,
+                        Document.review_status == "approved",
+                        DocumentFamily.current_document_id == Document.id,
+                        or_(
+                            Document.effective_date.is_(None),
+                            Document.effective_date <= date.today(),
+                        ),
+                        or_(
+                            Document.expiry_date.is_(None),
+                            Document.expiry_date >= date.today(),
+                        ),
+                    ),
+                ),
             )
             .all()
             if doc_ids

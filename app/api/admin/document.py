@@ -20,6 +20,8 @@ from app.schemas.document import (
     DocumentChunkResponse,
     DocumentListResponse,
     DocumentResponse,
+    DocumentReviewRequest,
+    DocumentReviewResponse,
     DocumentUploadResponse,
     ParseQualityDetailsResponse,
     QualityMetricName,
@@ -105,6 +107,46 @@ def _public_governance(document) -> dict[str, object]:
         ),
         "original_file_available": bool(getattr(document, "storage_key", None)),
     }
+
+
+@router.post(
+    "/api/v1/admin/{tenant_slug}/documents/{document_id}/review",
+    response_model=DocumentReviewResponse,
+)
+async def review(
+    tenant_slug: str,
+    document_id: str,
+    request: DocumentReviewRequest,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(get_tenant),
+    _admin=Depends(admin_auth),
+):
+    try:
+        document = document_service.review_document(
+            db,
+            tenant_id=tenant.id,
+            document_id=document_id,
+            decision=request.decision,
+            reviewer_user_id=_admin.id if isinstance(_admin, User) else None,
+        )
+    except document_service.DocumentLifecycleError as error:
+        status_code = 404 if str(error) == "Document not found" else 409
+        raise HTTPException(status_code, str(error)) from error
+
+    logger.info(
+        "document_reviewed",
+        tenant_slug=tenant_slug,
+        document_id=document.id,
+        decision=request.decision,
+    )
+    return DocumentReviewResponse(
+        document_id=document.id,
+        family_id=document.family_id,
+        review_status=document.review_status,
+        reviewed_by_user_id=document.reviewed_by_user_id,
+        reviewed_at=document.reviewed_at,
+        is_current=document.family.current_document_id == document.id,
+    )
 
 
 @router.post("/api/v1/admin/{tenant_slug}/documents/upload", status_code=201)
@@ -225,6 +267,11 @@ async def delete_doc(
     doc = document_service.get_document(db, tenant.id, document_id)
     if doc is None:
         raise HTTPException(404, "Document not found")
-    document_service.delete_document(db, tenant_slug, document_id)
+    try:
+        document_service.delete_document(
+            db, tenant.id, tenant_slug, document_id
+        )
+    except document_service.DocumentLifecycleError as error:
+        raise HTTPException(409, str(error)) from error
     logger.info("document_deleted", tenant_slug=tenant_slug, document_id=document_id)
     return {"status": "deleted"}

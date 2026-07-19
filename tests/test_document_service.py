@@ -877,7 +877,7 @@ class TestDocumentUpload:
             chunks_before = list_chunks(db, doc.id)
             assert len(chunks_before) > 0
 
-        delete_document(db, test_tenant.slug, doc.id)
+        delete_document(db, test_tenant.id, test_tenant.slug, doc.id)
         assert get_document(db, test_tenant.id, doc.id) is None
 
     async def test_cross_tenant_dedup_allowed(self, db, test_tenant):

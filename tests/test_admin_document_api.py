@@ -263,6 +263,109 @@ async def test_document_upload_uses_jwt_admin_as_owner(
     assert response.json()["owner_user_id"] == owner.id
 
 
+async def test_document_review_approves_and_publishes_snapshot(
+    admin_client, db, test_tenant,
+):
+    family = DocumentFamily(tenant_id=test_tenant.id, name="Review policy")
+    db.add(family)
+    db.flush()
+    document = Document(
+        tenant_id=test_tenant.id,
+        family_id=family.id,
+        filename="review-policy.txt",
+        file_type="txt",
+        file_hash="review-policy-hash",
+        status="ready",
+        parse_quality_status="passed",
+        review_status="pending_review",
+    )
+    db.add(document)
+    db.commit()
+
+    response = await admin_client.post(
+        f"/api/v1/admin/{test_tenant.slug}/documents/{document.id}/review",
+        json={"decision": "approved"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["document_id"] == document.id
+    assert payload["review_status"] == "approved"
+    assert payload["is_current"] is True
+    assert payload["reviewed_by_user_id"] is None
+    db.refresh(family)
+    assert family.current_document_id == document.id
+
+
+async def test_document_review_records_jwt_reviewer(
+    client, db, test_tenant,
+):
+    from app.core.auth.security import hash_password
+    from app.core.auth.token import create_access_token
+    from app.models.user import User
+
+    reviewer = User(
+        tenant_id=test_tenant.id,
+        email="reviewer@example.com",
+        password_hash=hash_password("not-used-in-test"),
+        display_name="Reviewer",
+        role="admin",
+        is_active=True,
+    )
+    family = DocumentFamily(tenant_id=test_tenant.id, name="JWT review policy")
+    db.add_all([reviewer, family])
+    db.flush()
+    document = Document(
+        tenant_id=test_tenant.id,
+        family_id=family.id,
+        filename="jwt-review.txt",
+        file_type="txt",
+        file_hash="jwt-review-hash",
+        status="ready",
+        parse_quality_status="passed",
+        review_status="pending_review",
+    )
+    db.add(document)
+    db.commit()
+
+    response = await client.post(
+        f"/api/v1/admin/{test_tenant.slug}/documents/{document.id}/review",
+        headers={"Authorization": f"Bearer {create_access_token(reviewer)}"},
+        json={"decision": "approved"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reviewed_by_user_id"] == reviewer.id
+
+
+async def test_document_review_rejects_unpublishable_snapshot(
+    admin_client, db, test_tenant,
+):
+    family = DocumentFamily(tenant_id=test_tenant.id, name="Failed policy")
+    db.add(family)
+    db.flush()
+    document = Document(
+        tenant_id=test_tenant.id,
+        family_id=family.id,
+        filename="failed-policy.txt",
+        file_type="txt",
+        file_hash="failed-review-hash",
+        status="failed",
+        parse_quality_status="failed",
+        review_status="pending_review",
+    )
+    db.add(document)
+    db.commit()
+
+    response = await admin_client.post(
+        f"/api/v1/admin/{test_tenant.slug}/documents/{document.id}/review",
+        json={"decision": "approved"},
+    )
+
+    assert response.status_code == 409
+    assert "ready" in response.text
+
+
 async def test_document_list_returns_audience_roles(admin_client, db, test_tenant):
     db.add(Document(
         tenant_id=test_tenant.id,

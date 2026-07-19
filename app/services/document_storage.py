@@ -75,3 +75,11 @@ def store_original(
 
 def read_original(storage_key: str) -> bytes:
     return _resolve_key(storage_key).read_bytes()
+
+
+def delete_original(storage_key: str) -> None:
+    path = _resolve_key(storage_key)
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return

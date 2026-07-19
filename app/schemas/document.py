@@ -75,6 +75,19 @@ class DocumentListResponse(BaseModel):
     total_pages: int
 
 
+class DocumentReviewRequest(BaseModel):
+    decision: Literal["approved", "rejected"]
+
+
+class DocumentReviewResponse(BaseModel):
+    document_id: str
+    family_id: str
+    review_status: Literal["approved", "rejected"]
+    reviewed_by_user_id: str | None = None
+    reviewed_at: datetime
+    is_current: bool
+
+
 class DocumentChunkResponse(BaseModel):
     id: str
     chunk_index: int

@@ -1,7 +1,7 @@
 """Document upload, listing, retrieval, and deletion."""
 
 import asyncio
-from datetime import date
+from datetime import date, datetime, timezone
 import hashlib
 import time
 import structlog
@@ -23,13 +23,18 @@ from app.core.retrieval_module import (
     get_vector_store,
 )
 from app.models.document import Document, DocumentChunk, DocumentFamily
-from app.services.document_storage import store_original
+from app.models.user import User
+from app.services.document_storage import delete_original, store_original
 
 logger = structlog.get_logger()
 
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
 SAFE_INDEX_ERROR_MESSAGE = "Document indexing failed."
 SAFE_EMPTY_ERROR_MESSAGE = "No text content extracted from file."
+
+
+class DocumentLifecycleError(ValueError):
+    """A requested document lifecycle transition is not allowed."""
 
 
 def _hash_content(data: bytes) -> str:
@@ -316,10 +321,70 @@ def list_chunks(db: Session, document_id: str) -> list[DocumentChunk]:
     ).order_by(DocumentChunk.chunk_index).all()
 
 
+def review_document(
+    db: Session,
+    *,
+    tenant_id: str,
+    document_id: str,
+    decision: str,
+    reviewer_user_id: str | None,
+) -> Document:
+    if decision not in {"approved", "rejected"}:
+        raise DocumentLifecycleError("Invalid review decision")
+
+    document = get_document(db, tenant_id, document_id)
+    if document is None:
+        raise DocumentLifecycleError("Document not found")
+    if document.family is None:
+        raise DocumentLifecycleError("Legacy document has no governance family")
+    if document.family.tenant_id != tenant_id:
+        raise DocumentLifecycleError("Document not found")
+    if document.review_status != "pending_review":
+        raise DocumentLifecycleError("Document has already been reviewed")
+
+    if reviewer_user_id:
+        reviewer = db.query(User).filter(
+            User.id == reviewer_user_id,
+            User.tenant_id == tenant_id,
+            User.role.in_(("owner", "admin")),
+            User.is_active.is_(True),
+        ).first()
+        if reviewer is None:
+            raise DocumentLifecycleError("Reviewer is not authorized")
+
+    if decision == "approved":
+        today = date.today()
+        if document.status != "ready":
+            raise DocumentLifecycleError("Document must be ready before approval")
+        if document.parse_quality_status != "passed":
+            raise DocumentLifecycleError("Document parse quality must be passed")
+        if document.effective_date and document.effective_date > today:
+            raise DocumentLifecycleError("Document effective date is in the future")
+        if document.expiry_date and document.expiry_date < today:
+            raise DocumentLifecycleError("Document is expired")
+        document.family.current_document_id = document.id
+
+    document.review_status = decision
+    document.reviewed_by_user_id = reviewer_user_id
+    document.reviewed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(document)
+    return document
+
+
 def delete_document(
-    db: Session, tenant_slug: str, document_id: str
+    db: Session, tenant_id: str, tenant_slug: str, document_id: str
 ) -> None:
     """Cascade delete: chunks → ChromaDB vectors → BM25 → document."""
+    doc = db.query(Document).filter(
+        Document.id == document_id,
+        Document.tenant_id == tenant_id,
+    ).first()
+    if doc is None:
+        return
+    if doc.family and doc.family.current_document_id == doc.id:
+        raise DocumentLifecycleError("Cannot delete the current published document")
+
     vs = get_vector_store()
     bm = get_bm25_manager()
 
@@ -328,11 +393,39 @@ def delete_document(
     ).all()
 
     for chunk in chunks:
-        vs.delete(tenant_slug, chunk.id)
-        bm.remove(tenant_slug, chunk.id)
+        try:
+            vs.delete(tenant_slug, chunk.id)
+        except Exception as error:
+            logger.error(
+                "document_vector_cleanup_failed",
+                document_id=document_id,
+                chunk_id=chunk.id,
+                error=str(error),
+            )
+        try:
+            bm.remove(tenant_slug, chunk.id)
+        except Exception as error:
+            logger.error(
+                "document_bm25_cleanup_failed",
+                document_id=document_id,
+                chunk_id=chunk.id,
+                error=str(error),
+            )
 
-    doc = db.query(Document).filter(Document.id == document_id).first()
-    if doc:
-        db.delete(doc)
-
+    storage_key = doc.storage_key
+    db.delete(doc)
     db.commit()
+    storage_references = (
+        db.query(Document).filter(Document.storage_key == storage_key).count()
+        if storage_key
+        else 0
+    )
+    if storage_key and storage_references == 0:
+        try:
+            delete_original(storage_key)
+        except (OSError, ValueError) as error:
+            logger.error(
+                "document_original_cleanup_failed",
+                document_id=document_id,
+                error=str(error),
+            )

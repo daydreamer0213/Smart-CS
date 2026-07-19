@@ -16,6 +16,7 @@ from scripts.evaluate_rag_retrieval import evaluate_results, load_rag_manifest
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "documents"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
@@ -237,6 +238,33 @@ def test_run_evaluation_rejects_non_d_work_dir_on_windows(tmp_path, monkeypatch)
         rag_evaluation.run_evaluation(FIXTURE_DIR, tmp_path, "test")
 
 
+def test_import_keeps_retrieval_stack_out_of_parse_process():
+    command = [
+        sys.executable,
+        "-c",
+        (
+            "import json, sys; "
+            "import scripts.evaluate_rag_retrieval; "
+            "heavy_roots = {'chromadb', 'sqlalchemy', 'langchain_core', 'langgraph'}; "
+            "heavy_modules = sorted(name for name in sys.modules "
+            "if name.split('.')[0] in heavy_roots "
+            "or name.startswith('app.core.agent') "
+            "or name.startswith('app.core.retrieval')); "
+            "print(json.dumps(heavy_modules))"
+        ),
+    ]
+
+    completed = subprocess.run(
+        command,
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == []
+
+
 def test_parse_fixture_uses_lightweight_subprocess_for_advanced_route(tmp_path, monkeypatch):
     parsed = ParsedDocument(
         parser_name="worker-parser",
@@ -342,13 +370,15 @@ def test_run_evaluation_releases_sqlite_when_parsing_fails(d_work_dir, monkeypat
 def test_run_evaluation_uses_governed_documents_and_real_tool_boundary(
     d_work_dir, lightweight_parser, monkeypatch,
 ):
-    original_tool = rag_evaluation.search_knowledge
+    from app.core.agent import tools as agent_tools
+
+    original_tool = agent_tools.search_knowledge
     observed = {"queries": [], "governance_checked": False}
 
     class SearchToolSpy:
         async def ainvoke(self, payload):
             observed["queries"].append(payload["query"])
-            runtime = rag_evaluation._agent_runtime.get()
+            runtime = agent_tools._runtime.get()
             session = runtime["db_session"]
             families = session.query(DocumentFamily).all()
             documents = session.query(Document).all()
@@ -364,7 +394,7 @@ def test_run_evaluation_uses_governed_documents_and_real_tool_boundary(
             observed["governance_checked"] = True
             return await original_tool.ainvoke(payload)
 
-    monkeypatch.setattr(rag_evaluation, "search_knowledge", SearchToolSpy())
+    monkeypatch.setattr(agent_tools, "search_knowledge", SearchToolSpy())
 
     report = rag_evaluation.run_evaluation(FIXTURE_DIR, d_work_dir, "pytest")
 

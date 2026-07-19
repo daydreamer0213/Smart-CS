@@ -11,6 +11,7 @@ import platform
 import subprocess
 import sys
 import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 from uuid import uuid4
@@ -20,21 +21,24 @@ LIGHTWEIGHT_PARSER_WORKER = PROJECT_ROOT / "scripts" / "_rag_parse_worker.py"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-import app.core.retrieval_module as retrieval_module
-from app.core.agent.tools import _runtime as _agent_runtime
-from app.core.agent.tools import search_knowledge, set_runtime
-from app.core.embedding.hash_provider import HashEmbeddingProvider
-from app.core.parsing.contracts import ParsedDocument
+from app.core.parsing.contracts import KnowledgeChunk, ParsedDocument
 from app.core.parsing.quality import evaluate_parse_quality
 from app.core.parsing.router import parse_structured_file
 from app.core.parsing.runtime import configure_parser_runtime
 from app.core.parsing.structured_chunker import CHUNKER_VERSION, chunk_document
-from app.core.retrieval.bm25_index import BM25IndexManager
-from app.core.retrieval.vector_store import VectorStore
-from app.models import Base, Document, DocumentChunk, DocumentFamily, Tenant
+
+
+@dataclass(frozen=True)
+class PreparedFixture:
+    filename: str
+    file_type: str
+    file_size: int
+    file_hash: str
+    parser_name: str
+    parser_version: str
+    page_count: int
+    quality_details: dict[str, Any]
+    chunks: list[KnowledgeChunk]
 
 
 def _normalized_text(value: object) -> str:
@@ -227,12 +231,14 @@ def parse_fixture(source_path: Path, expected_route: str, run_dir: Path) -> Pars
 async def _index_and_search(
     *,
     session,
-    tenant: Tenant,
-    indexed_chunks: list[tuple[DocumentChunk, str]],
+    tenant,
+    indexed_chunks: list[tuple[Any, str]],
     manifest: dict,
-    embedding: HashEmbeddingProvider,
-    vector_store: VectorStore,
-    bm25: BM25IndexManager,
+    embedding,
+    vector_store,
+    bm25,
+    search_tool,
+    set_runtime,
 ) -> dict[str, list[dict]]:
     texts = [text for _, text in indexed_chunks]
     vectors = await embedding.embed(texts)
@@ -249,10 +255,43 @@ async def _index_and_search(
     results_by_query = {}
     for query in manifest["queries"]:
         payload = json.loads(
-            await search_knowledge.ainvoke({"query": query["question"]})
+            await search_tool.ainvoke({"query": query["question"]})
         )
         results_by_query[query["id"]] = payload.get("results", [])
     return results_by_query
+
+
+def _prepare_fixtures(
+    fixture_dir: Path,
+    run_dir: Path,
+    indexable: list[dict],
+) -> list[PreparedFixture]:
+    prepared = []
+    for case in indexable:
+        filename = case["filename"]
+        source_path = fixture_dir / filename
+        data = source_path.read_bytes()
+        parsed = parse_fixture(source_path, case["expected_route"], run_dir)
+        quality = evaluate_parse_quality(parsed, warnings=parsed.quality.warnings)
+        if quality.status != "passed":
+            raise ValueError(f"Fixture {case['id']} failed the parse quality gate")
+        chunks = chunk_document(parsed, filename)
+        if not chunks:
+            raise ValueError(f"Fixture {case['id']} produced no chunks")
+        prepared.append(
+            PreparedFixture(
+                filename=filename,
+                file_type=source_path.suffix.lstrip(".").lower(),
+                file_size=len(data),
+                file_hash=hashlib.sha256(data).hexdigest(),
+                parser_name=parsed.parser_name,
+                parser_version=parsed.parser_version,
+                page_count=parsed.page_count,
+                quality_details=quality.model_dump(),
+                chunks=chunks,
+            )
+        )
+    return prepared
 
 
 def run_evaluation(
@@ -283,6 +322,18 @@ def run_evaluation(
     if "encrypted-policy" not in excluded_fixture_ids:
         raise ValueError("Encrypted fixture must be excluded")
 
+    prepared_fixtures = _prepare_fixtures(fixture_dir, run_dir, indexable)
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    import app.core.retrieval_module as retrieval_module
+    from app.core.agent import tools as agent_tools
+    from app.core.embedding.hash_provider import HashEmbeddingProvider
+    from app.core.retrieval.bm25_index import BM25IndexManager
+    from app.core.retrieval.vector_store import VectorStore
+    from app.models import Base, Document, DocumentChunk, DocumentFamily, Tenant
+
     engine = create_engine(f"sqlite:///{database_path.as_posix()}")
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
@@ -290,41 +341,27 @@ def run_evaluation(
     session.add(tenant)
     session.flush()
 
-    indexed_chunks: list[tuple[DocumentChunk, str]] = []
+    indexed_chunks: list[tuple[Any, str]] = []
     try:
-        for case in indexable:
-            filename = case["filename"]
-            source_path = fixture_dir / filename
-            data = source_path.read_bytes()
-            parsed = parse_fixture(source_path, case["expected_route"], run_dir)
-            quality = evaluate_parse_quality(
-                parsed,
-                warnings=parsed.quality.warnings,
-            )
-            if quality.status != "passed":
-                raise ValueError(f"Fixture {case['id']} failed the parse quality gate")
-            parsed_chunks = chunk_document(parsed, filename)
-            if not parsed_chunks:
-                raise ValueError(f"Fixture {case['id']} produced no chunks")
-
-            family = DocumentFamily(tenant_id=tenant.id, name=filename)
+        for prepared in prepared_fixtures:
+            family = DocumentFamily(tenant_id=tenant.id, name=prepared.filename)
             session.add(family)
             session.flush()
             document = Document(
                 tenant_id=tenant.id,
                 family_id=family.id,
-                filename=filename,
-                file_type=Path(filename).suffix.lstrip(".").lower(),
-                file_size=len(data),
-                file_hash=hashlib.sha256(data).hexdigest(),
-                chunk_count=len(parsed_chunks),
+                filename=prepared.filename,
+                file_type=prepared.file_type,
+                file_size=prepared.file_size,
+                file_hash=prepared.file_hash,
+                chunk_count=len(prepared.chunks),
                 status="ready",
                 audience_roles=["employee"],
-                parser_name=parsed.parser_name,
-                parser_version=parsed.parser_version,
-                page_count=parsed.page_count,
-                parse_quality_status=quality.status,
-                parse_quality_details=quality.model_dump(),
+                parser_name=prepared.parser_name,
+                parser_version=prepared.parser_version,
+                page_count=prepared.page_count,
+                parse_quality_status="passed",
+                parse_quality_details=prepared.quality_details,
                 version=1,
                 index_generation=1,
                 review_status="approved",
@@ -336,7 +373,7 @@ def run_evaluation(
             session.add(document)
             session.flush()
             family.current_document_id = document.id
-            for index, parsed_chunk in enumerate(parsed_chunks, start=1):
+            for index, parsed_chunk in enumerate(prepared.chunks, start=1):
                 chunk = DocumentChunk(
                     document_id=document.id,
                     chunk_index=index,
@@ -370,7 +407,7 @@ def run_evaluation(
         retrieval_module._bm25_manager,
         retrieval_module._embedding_provider,
     )
-    previous_runtime = _agent_runtime.get()
+    previous_runtime = agent_tools._runtime.get()
     retrieval_module.set_vector_store(vector_store)
     retrieval_module.set_bm25_manager(bm25)
     retrieval_module.set_embedding_provider(embedding)
@@ -383,11 +420,13 @@ def run_evaluation(
             embedding=embedding,
             vector_store=vector_store,
             bm25=bm25,
+            search_tool=agent_tools.search_knowledge,
+            set_runtime=agent_tools.set_runtime,
         ))
         metrics = evaluate_results(manifest, results_by_query)
     finally:
         bm25.remove_tenant(tenant.slug)
-        _agent_runtime.set(previous_runtime)
+        agent_tools._runtime.set(previous_runtime)
         (
             retrieval_module._vector_store,
             retrieval_module._bm25_manager,

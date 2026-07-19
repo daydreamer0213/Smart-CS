@@ -15,8 +15,9 @@ and Tesseract dependencies and verify `chi_sim` plus `eng`.
 Keep all parser data under `D:\DevData\smartcs`. In particular, the configured
 temporary directory, Docling artifacts, Hugging Face cache, Torch cache,
 Tesseract executable, and tessdata must resolve to the paths defined by app
-config. The structured benchmark applies those configured cache and temporary
-paths before parsing. Benchmark JSON belongs in
+config. Application startup and the structured benchmark both apply the same
+configured cache and temporary paths before parsing; operators do not need to
+set `TEMP` or `TMP` manually. Benchmark JSON belongs in
 `D:\DevData\smartcs\benchmarks` and must not be committed.
 
 ## Run

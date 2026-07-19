@@ -2,11 +2,16 @@
 
 import asyncio
 import hashlib
+import time
 import structlog
 
 from sqlalchemy.orm import Session
 
-from app.core.parsing.quality import SAFE_PARSE_ERROR_MESSAGE, parser_failure_quality
+from app.core.parsing.quality import (
+    SAFE_PARSE_ERROR_MESSAGE,
+    evaluate_parse_quality,
+    parser_failure_quality,
+)
 from app.core.parsing.router import parse_structured_file
 from app.core.parsing.structured_chunker import chunk_document
 from app.core.retrieval_module import (
@@ -67,6 +72,7 @@ async def upload_document(
     db.refresh(doc)
     document_id = doc.id
 
+    parse_started = time.perf_counter()
     try:
         parsed = parse_structured_file(filename, file_data)
     except Exception as error:
@@ -79,6 +85,12 @@ async def upload_document(
         db.refresh(doc)
         logger.error("document_parse_failed", filename=filename, error=str(error))
         return doc
+
+    parsed.quality = evaluate_parse_quality(
+        parsed,
+        elapsed_ms=max(0.0, (time.perf_counter() - parse_started) * 1000),
+        warnings=parsed.quality.warnings,
+    )
 
     doc.parser_name = parsed.parser_name
     doc.parser_version = parsed.parser_version

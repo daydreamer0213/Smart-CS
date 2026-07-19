@@ -19,8 +19,6 @@ $env:PIP_CACHE_DIR = 'D:\DevData\smartcs\pip'
 $env:CONDA_PKGS_DIRS = 'D:\DevData\conda-pkgs'
 $env:PARSER_DATA_ROOT = 'D:\DevData\smartcs'
 $env:PARSER_TEMP_DIR = 'D:\DevData\smartcs\tmp'
-$env:TEMP = $env:PARSER_TEMP_DIR
-$env:TMP = $env:PARSER_TEMP_DIR
 $env:DOCLING_ARTIFACTS_PATH = 'D:\DevData\smartcs\docling\artifacts'
 $env:HF_HOME = 'D:\DevData\smartcs\huggingface'
 $env:TORCH_HOME = 'D:\DevData\smartcs\torch'
@@ -31,10 +29,6 @@ $env:DOCLING_NUM_THREADS = '4'
 $env:OMP_NUM_THREADS = '4'
 
 New-Item -ItemType Directory -Force $env:PIP_CACHE_DIR, $env:CONDA_PKGS_DIRS, $env:PARSER_TEMP_DIR, $env:DOCLING_ARTIFACTS_PATH, $env:HF_HOME, $env:TORCH_HOME, $env:TESSDATA_PREFIX | Out-Null
-$resolvedTemp = & 'D:\2026.07.09\conda-envs\smart-cs\python.exe' -c "import tempfile; print(tempfile.gettempdir())"
-if ((Resolve-Path $resolvedTemp).Path -ne (Resolve-Path $env:PARSER_TEMP_DIR).Path) {
-    throw "Python tempfile directory does not resolve to PARSER_TEMP_DIR: $resolvedTemp"
-}
 ```
 
 `TESSDATA_PREFIX` is normalized to end in a slash. All parser paths must be
@@ -42,6 +36,11 @@ children of `PARSER_DATA_ROOT`; the default therefore confines them to
 `D:\DevData\smartcs`. A non-Windows deployment may set an explicit absolute
 root and matching child paths. Copy the same values into the local `.env` only
 when enabling this optional parser; do not commit that file.
+
+Do not set `TEMP` or `TMP` manually for the application. Uvicorn startup reads
+the parser paths through `Settings` and configures `TEMP`, `TMP`, `HF_HOME`,
+`TORCH_HOME`, `TESSDATA_PREFIX`, and Python's `tempfile` directory before serving
+requests. The structured benchmark calls the same runtime helper explicitly.
 
 ## Inspect and install Docling
 
@@ -131,8 +130,8 @@ OCR, offline layout/TableFormer artifacts under
 `D:\DevData\smartcs\tmp`. `_validate_runtime_paths` checks the resolved
 runtime temp directory is the configured parser temp directory or one of its
 children. A mismatch produces the same controlled unavailable-runtime outcome
-as a missing executable, language pack, or model artifact; it does not change
-process-global environment variables.
+as a missing executable, language pack, or model artifact. Application startup
+sets the required process-global runtime variables from validated Settings.
 
 ## Audit cache locations before parsing
 
@@ -141,8 +140,10 @@ to `D:` and inspect common system-drive cache locations for unexpected new
 Docling, Hugging Face, Torch, or pip data:
 
 ```powershell
-@($env:PIP_CACHE_DIR, $env:PARSER_DATA_ROOT, $env:PARSER_TEMP_DIR, $env:TEMP, $env:TMP, $env:DOCLING_ARTIFACTS_PATH, $env:HF_HOME, $env:TORCH_HOME, $env:TESSDATA_PREFIX) |
+@($env:PIP_CACHE_DIR, $env:PARSER_DATA_ROOT, $env:PARSER_TEMP_DIR, $env:DOCLING_ARTIFACTS_PATH, $env:HF_HOME, $env:TORCH_HOME, $env:TESSDATA_PREFIX) |
     ForEach-Object { Get-Item $_ | Select-Object FullName }
+
+& 'D:\2026.07.09\conda-envs\smart-cs\python.exe' -c "from app.core.parsing.runtime import configure_parser_runtime; configure_parser_runtime(); import os,tempfile; print(tempfile.gettempdir(), os.environ['TEMP'], os.environ['TMP'], sep='\n')"
 
 Get-ChildItem -Force "$env:LOCALAPPDATA\pip\Cache", "$env:USERPROFILE\.cache\huggingface", "$env:USERPROFILE\.cache\docling" -ErrorAction SilentlyContinue |
     Select-Object FullName

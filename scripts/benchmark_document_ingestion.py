@@ -7,7 +7,6 @@ import os
 import platform
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 from typing import Sequence
@@ -26,6 +25,7 @@ from app.core.parsing.parser import parse_file
 from app.config import settings
 from app.core.parsing.quality import evaluate_parse_quality
 from app.core.parsing.router import parse_structured_file
+from app.core.parsing.runtime import configure_parser_runtime
 from app.core.parsing.structured_chunker import MAX_TOKENS, chunk_document
 
 SAFE_ERROR_MESSAGE = "Document processing failed."
@@ -307,16 +307,6 @@ def _structured_run_context(
         "max_tokens": MAX_TOKENS,
     }
     return context
-
-
-def _prepare_structured_runtime() -> None:
-    Path(settings.parser_temp_dir).mkdir(parents=True, exist_ok=True)
-    tempfile.tempdir = settings.parser_temp_dir
-    os.environ["TEMP"] = settings.parser_temp_dir
-    os.environ["TMP"] = settings.parser_temp_dir
-    os.environ["HF_HOME"] = settings.hf_home
-    os.environ["TORCH_HOME"] = settings.torch_home
-    os.environ["TESSDATA_PREFIX"] = settings.tessdata_prefix
 
 
 def _page_count(path: Path) -> int | None:
@@ -708,7 +698,7 @@ async def run_benchmark(
 async def run_structured_benchmark(
     fixture_dir: Path, environment_label: str = "local-unspecified"
 ) -> dict:
-    _prepare_structured_runtime()
+    configure_parser_runtime()
     manifest_bytes = (fixture_dir / "manifest.json").read_bytes()
     manifest = json.loads(manifest_bytes)
     results = []

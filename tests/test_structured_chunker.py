@@ -1,3 +1,5 @@
+import pytest
+
 from app.core.parsing.contracts import ParsedDocument, ParsedElement
 
 
@@ -181,8 +183,57 @@ def test_chunk_document_splits_oversized_elements_deterministically(monkeypatch)
 
     assert [chunk.content for chunk in first] == [
         "one two three four five six seven eight",
-        "nine ten eleven twelve",
+        " nine ten eleven twelve",
     ]
     assert [chunk.content for chunk in second] == [chunk.content for chunk in first]
     assert all(chunk.token_count <= 8 for chunk in first)
     assert all(chunk.source_element_indexes == [0] for chunk in first)
+
+
+@pytest.mark.parametrize("element_type", ["paragraph", "list"])
+def test_chunk_document_round_trips_long_chinese_text(element_type):
+    from app.core.parsing.structured_chunker import MAX_TOKENS, chunk_document
+
+    element = ParsedElement(
+        text=" 政策" * 1000 + "\n",
+        element_type=element_type,
+        page_start=1,
+        section_path=["政策"],
+    )
+    chunks = chunk_document(
+        _document(element),
+        title="员工手册",
+    )
+
+    assert len(chunks) > 1
+    assert "".join(chunk.content for chunk in chunks) == element.text
+    assert all("\ufffd" not in chunk.content for chunk in chunks)
+    assert all(chunk.token_count <= MAX_TOKENS for chunk in chunks)
+    assert all(chunk.source_element_indexes == [0] for chunk in chunks)
+
+
+def test_chunk_document_round_trips_an_oversized_chinese_table_row():
+    from app.core.parsing.structured_chunker import MAX_TOKENS, chunk_document
+
+    header = "| 项目 | 说明 |\n| --- | --- |"
+    row = f"| 政策 | {'政策' * 1000} |"
+    chunks = chunk_document(
+        _document(
+            ParsedElement(
+                text=f"{header}\n{row}",
+                table_markdown=f"{header}\n{row}",
+                element_type="table",
+                page_start=2,
+                section_path=["政策", "明细"],
+            )
+        ),
+        title="员工手册",
+    )
+    prefix = f"{header}\n"
+
+    assert len(chunks) > 1
+    assert all(chunk.content.startswith(prefix) for chunk in chunks)
+    assert "".join(chunk.content.removeprefix(prefix) for chunk in chunks) == row
+    assert all("\ufffd" not in chunk.content for chunk in chunks)
+    assert all(chunk.token_count <= MAX_TOKENS for chunk in chunks)
+    assert all(chunk.source_element_indexes == [0] for chunk in chunks)

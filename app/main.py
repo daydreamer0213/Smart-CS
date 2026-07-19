@@ -33,6 +33,9 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Application lifespan — setup on start, teardown on shutdown."""
+    from app.core.parsing.runtime import configure_parser_runtime
+
+    configure_parser_runtime()
     setup_structlog(settings.log_level, settings.log_dir)
 
     # Import here to avoid circular imports at module level

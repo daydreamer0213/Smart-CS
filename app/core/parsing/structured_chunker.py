@@ -14,12 +14,24 @@ def _token_count(text: str) -> int:
 
 
 def _split_text(text: str, max_tokens: int | None = None) -> list[str]:
-    max_tokens = max_tokens or MAX_TOKENS
-    tokens = _ENCODING.encode(text)
-    return [
-        _ENCODING.decode(tokens[start : start + max_tokens]).strip()
-        for start in range(0, len(tokens), max_tokens)
-    ]
+    max_tokens = MAX_TOKENS if max_tokens is None else max_tokens
+    chunks: list[str] = []
+    start = 0
+    while start < len(text):
+        low, high = start + 1, len(text)
+        end = start
+        while low <= high:
+            candidate = (low + high) // 2
+            if _token_count(text[start:candidate]) <= max_tokens:
+                end = candidate
+                low = candidate + 1
+            else:
+                high = candidate - 1
+        if end == start:
+            raise ValueError("max_tokens is too small for one character")
+        chunks.append(text[start:end])
+        start = end
+    return chunks
 
 
 def _split_table(text: str) -> list[str]:

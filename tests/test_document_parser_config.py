@@ -1,3 +1,5 @@
+import os
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -113,3 +115,32 @@ def test_document_parser_allows_an_explicit_portable_data_root(monkeypatch):
     assert settings.parser_data_root == "/var/lib/smartcs"
     assert settings.parser_temp_dir == "/var/lib/smartcs/tmp"
     assert settings.tessdata_prefix == "/var/lib/smartcs/tesseract/tessdata/"
+
+
+def test_parser_runtime_is_configured_from_settings_before_docling_validation(
+    monkeypatch,
+):
+    for name in ("TEMP", "TMP", "HF_HOME", "TORCH_HOME", "TESSDATA_PREFIX"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(tempfile, "tempdir", None)
+
+    from app.core.parsing import docling_parser
+    from app.core.parsing.runtime import configure_parser_runtime
+
+    settings = Settings(_env_file=None)
+    monkeypatch.setattr(docling_parser, "settings", settings)
+    configure_parser_runtime(settings)
+
+    expected = {
+        "TEMP": settings.parser_temp_dir,
+        "TMP": settings.parser_temp_dir,
+        "HF_HOME": settings.hf_home,
+        "TORCH_HOME": settings.torch_home,
+        "TESSDATA_PREFIX": settings.tessdata_prefix,
+    }
+    root = Path(settings.parser_data_root).resolve()
+    assert tempfile.tempdir == settings.parser_temp_dir
+    assert tempfile.gettempdir() == settings.parser_temp_dir
+    assert {name: os.environ[name] for name in expected} == expected
+    assert all(Path(path).resolve().is_relative_to(root) for path in expected.values())
+    docling_parser._validate_runtime_paths()

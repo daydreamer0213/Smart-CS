@@ -33,7 +33,7 @@ def _parsed_document(status="passed", metadata=None):
             ParsedElement(
                 text="Leave policy",
                 element_type="paragraph",
-                page_start=2,
+                page_start=1,
                 page_end=3,
                 section_path=["HR", "Leave"],
             )
@@ -41,7 +41,11 @@ def _parsed_document(status="passed", metadata=None):
         quality=ParseQuality(
             status=status,
             metrics={"character_count": 12},
-            warnings=[] if status == "passed" else ["missing_page_coverage"],
+            warnings={
+                "passed": [],
+                "review_required": ["missing_page_coverage"],
+                "failed": ["parser_exception"],
+            }[status],
         ),
         metadata=metadata or {},
     )
@@ -390,10 +394,16 @@ class TestDocumentUpload:
         assert doc.parser_version == "2.1"
         assert doc.page_count == 3
         assert doc.parse_quality_status == "passed"
-        assert doc.parse_quality_details == {
-            "metrics": {"character_count": 12},
-            "warnings": [],
-        }
+        metrics = doc.parse_quality_details["metrics"]
+        assert metrics["page_count"] == 3
+        assert metrics["usable_text_pages"] == 3
+        assert metrics["empty_pages"] == 0
+        assert metrics["character_count"] == 12
+        assert metrics["table_count"] == 0
+        assert metrics["heading_count"] == 0
+        assert metrics["ocr_pages"] == 0
+        assert metrics["elapsed_ms"] >= 0
+        assert doc.parse_quality_details["warnings"] == []
         assert chunk.chunk_index == 1
         assert chunk.content == "Leave policy"
         assert chunk.token_count == 7
@@ -576,18 +586,30 @@ class TestDocumentUpload:
         assert all(chunk.status == "inactive" for chunk in chunks)
         assert all(chunk.embedding_id is None for chunk in chunks)
 
-    async def test_upload_txt_creates_document(self, db, test_tenant):
-        """Upload a text file and verify Document + chunks are created."""
-        from app.services.document_service import upload_document
+    async def test_native_txt_upload_evaluates_quality_and_indexes(self, db, test_tenant):
+        from app.services.document_service import list_chunks, upload_document
 
         doc = await upload_document(
             db, test_tenant.id, test_tenant.slug,
-            "faq.txt", b"Q: test question\nA: test answer",
+            "native-policy.txt", b"Policy title\n\nPolicy body",
         )
-        assert doc.status in ("ready", "failed")
+
+        chunks = list_chunks(db, doc.id)
+        metrics = doc.parse_quality_details["metrics"]
+        assert doc.status == "ready"
+        assert doc.parser_name == "native-text"
+        assert doc.parse_quality_status == "passed"
+        assert metrics["page_count"] == 0
+        assert metrics["character_count"] == 23
+        assert metrics["table_count"] == 0
+        assert metrics["heading_count"] == 0
+        assert metrics["elapsed_ms"] >= 0
+        assert doc.parse_quality_details["warnings"] == []
+        assert doc.chunk_count == 1
         assert doc.audience_roles == []
-        if doc.status == "ready":
-            assert doc.chunk_count > 0
+        assert len(chunks) == 1
+        assert chunks[0].status == "active"
+        assert chunks[0].embedding_id == chunks[0].id
 
     async def test_upload_empty_file_raises(self, db, test_tenant):
         from app.services.document_service import upload_document

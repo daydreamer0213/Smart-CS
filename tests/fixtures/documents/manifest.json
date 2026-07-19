@@ -161,7 +161,7 @@
       "expected_route": "rejected",
       "expected_route_reason": "encrypted",
       "expected_quality_status": "failed",
-      "expected_quality_warnings": ["encrypted_input"],
+      "expected_quality_warnings": ["encrypted_input", "missing_page_coverage"],
       "expected_indexable": false,
       "expected_fact_provenance": [],
       "expected_fact_order": [],

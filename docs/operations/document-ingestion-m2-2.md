@@ -39,7 +39,9 @@ continues to select the M2-1 baseline parser and chunker.
 
 The structured command may write Docling progress and Tesseract orientation
 warnings to the console for sparse synthetic pages. Judge publication safety
-from the JSON quality and acceptance gates, not from console silence.
+from the JSON quality and acceptance gates, not from console silence. It writes
+the report first and returns a non-zero exit code when the structured acceptance
+gate fails; baseline mode retains its historical zero exit behavior.
 
 ## Observe
 
@@ -53,8 +55,9 @@ $structured.summary
 $structured.results | Select-Object id, status, route, route_reason, indexable, elapsed_ms
 ```
 
-The M2-2 gate passes only when parsed-fact, chunk-fact, provenance, and overall
-acceptance gates are all `passed`. Each fixture records:
+The M2-2 gate passes only when corpus, parsed-fact, chunk-fact, provenance, and
+overall acceptance gates are all `passed`. The corpus gate binds the report to
+the committed nine fixture IDs and 18 required facts. Each fixture records:
 
 - route and controlled route reason;
 - parser and chunker names and versions;
@@ -66,8 +69,10 @@ acceptance gates are all `passed`. Each fixture records:
   context without local paths, usernames, credentials, or raw exception text.
 
 The encrypted fixture must remain `blocked`, `indexable: false`, contain no
-chunks, and expose only its controlled route/quality reason. Unexpected parser
-exceptions use the fixed public message `Document processing failed.`
+chunks, and report exactly `encrypted_input` plus `missing_page_coverage` as its
+quality warnings. Any undeclared extra warning fails fixture acceptance.
+Unexpected parser exceptions use the fixed public message
+`Document processing failed.`
 
 ## Verified Evidence
 
@@ -78,11 +83,14 @@ and 6 logical CPUs:
   fixture elapsed time 0.57 seconds.
 - M2-2 structured: 8 parsed, 1 encrypted fixture blocked, 18/18 parsed facts,
   18/18 chunk facts, and all provenance/acceptance gates passed; summed fixture
-  elapsed time 15.86 seconds.
+  elapsed time 16.15 seconds.
+- Manifest SHA-256:
+  `68ccf288d79b83803b8c87162f21880f45095c40557b22223e9c035b0c734869`.
 - Python 3.12.13, PyMuPDF 1.27.2.3, python-docx 1.2.0, openpyxl 3.1.5,
   docling-slim 2.113.0, and Tesseract 5.5.2 with `chi_sim` and `eng`.
 - The leave table preserves both header association (`工龄` with `年假天数`)
-  and row association (`20年以上` with `15天`) in one table element and chunk.
+  and row association (`20年以上` with `15天`) in one table element and chunk,
+  with the passing chunk source lineage pointing to the passing table element.
 - The two-column fixture preserves declared reading order. Page and section
   provenance passes for PDFs, headed DOCX, and multi-sheet XLSX source lineage.
 

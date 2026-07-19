@@ -7,7 +7,12 @@ import sys
 
 import pytest
 
-from app.core.parsing.contracts import ParseQuality, ParsedDocument, ParsedElement
+from app.core.parsing.contracts import (
+    KnowledgeChunk,
+    ParseQuality,
+    ParsedDocument,
+    ParsedElement,
+)
 from scripts import benchmark_document_ingestion as benchmark
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "documents"
@@ -155,6 +160,7 @@ async def test_structured_benchmark_records_routes_provenance_and_18_fact_gates(
         "chunk_found_facts": 18,
         "fact_recall": 1.0,
         "chunk_fact_recall": 1.0,
+        "corpus_gate": "passed",
         "parsed_fact_gate": "passed",
         "chunk_fact_gate": "passed",
         "provenance_gate": "passed",
@@ -243,6 +249,101 @@ def test_table_association_requires_facts_in_the_same_row():
     assert association["element_indexes"] == []
     assert association["chunk_indexes"] == []
     assert association["passed"] is False
+
+
+def test_table_association_requires_chunk_lineage_to_matching_table_element():
+    table = "| 20年以上 | 15天 |"
+    elements = [
+        ParsedElement(
+            text=table,
+            table_markdown=table,
+            element_type="table",
+            page_start=1,
+        ),
+        ParsedElement(text="Unrelated source.", element_type="paragraph", page_start=1),
+    ]
+    chunks = [
+        KnowledgeChunk(
+            content=table,
+            contextualized_content=table,
+            page_start=1,
+            element_types=["table"],
+            source_element_indexes=[1],
+            token_count=1,
+        )
+    ]
+
+    association = benchmark._table_association(
+        ["20年以上", "15天"], elements, chunks
+    )
+
+    assert association["element_indexes"] == [0]
+    assert association["chunk_indexes"] == [0]
+    assert association["passed"] is False
+
+
+@pytest.mark.asyncio
+async def test_structured_acceptance_rejects_undeclared_quality_warning(monkeypatch):
+    case = next(
+        case for case in load_manifest()["fixtures"] if case["id"] == "encrypted-policy"
+    ).copy()
+    case["expected_quality_warnings"] = [
+        "encrypted_input",
+        "missing_page_coverage",
+    ]
+    parse = fake_structured_parser()
+
+    def parse_with_extra_warning(filename, data):
+        document = parse(filename, data)
+        document.quality.warnings.append("advanced_parser_incomplete")
+        return document
+
+    monkeypatch.setattr(benchmark, "parse_structured_file", parse_with_extra_warning)
+
+    result = await benchmark._benchmark_structured_fixture(FIXTURE_DIR, case)
+
+    assert set(result["quality"]["warnings"]) == {
+        "encrypted_input",
+        "missing_page_coverage",
+        "advanced_parser_incomplete",
+    }
+    assert result["acceptance_passed"] is False
+
+
+@pytest.mark.asyncio
+async def test_structured_gate_rejects_any_noncanonical_corpus(tmp_path, monkeypatch):
+    manifest = load_manifest()
+    missing_fact = json.loads(json.dumps(manifest, ensure_ascii=False))
+    missing_fact["fixtures"][-1]["required_facts"].pop()
+    missing_fact["fixtures"][-1]["expected_fact_provenance"].pop()
+    replaced_fixture = json.loads(json.dumps(manifest, ensure_ascii=False))
+    replaced_fixture["fixtures"][0]["id"] = "replacement-fixture"
+    variants = {
+        "empty": {"schema_version": 1, "fixtures": []},
+        "missing-fixture": {
+            "schema_version": 1,
+            "fixtures": manifest["fixtures"][:-1],
+        },
+        "missing-fact": missing_fact,
+        "replaced-fixture": replaced_fixture,
+    }
+    monkeypatch.setattr(
+        benchmark, "parse_structured_file", fake_structured_parser()
+    )
+
+    for name, variant in variants.items():
+        fixture_dir = tmp_path / name
+        fixture_dir.mkdir()
+        for case in variant["fixtures"]:
+            shutil.copy2(FIXTURE_DIR / case["filename"], fixture_dir / case["filename"])
+        (fixture_dir / "manifest.json").write_text(
+            json.dumps(variant, ensure_ascii=False), encoding="utf-8"
+        )
+
+        report = await benchmark.run_structured_benchmark(fixture_dir)
+
+        assert report["summary"]["corpus_gate"] == "failed"
+        assert report["summary"]["acceptance_gate"] == "failed"
 
 
 @pytest.mark.asyncio
@@ -529,6 +630,36 @@ def test_benchmark_cli_structured_mode_writes_distinct_report(tmp_path, monkeypa
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["mode"] == "structured"
     assert payload["benchmark"] == "smartcs-structured-parser"
+
+
+@pytest.mark.parametrize("write_output", [False, True], ids=["stdout", "file"])
+def test_benchmark_cli_structured_mode_returns_nonzero_for_failed_gate(
+    tmp_path, monkeypatch, capsys, write_output
+):
+    output = tmp_path / "failed-structured.json"
+    report = {
+        "schema_version": 2,
+        "benchmark": "smartcs-structured-parser",
+        "mode": "structured",
+        "summary": {"acceptance_gate": "failed"},
+    }
+
+    async def fake_run(_fixture_dir, _environment_label):
+        return report
+
+    monkeypatch.setattr(benchmark, "run_structured_benchmark", fake_run)
+    args = ["--mode", "structured", "--fixture-dir", str(FIXTURE_DIR.resolve())]
+    if write_output:
+        args.extend(["--output", str(output)])
+
+    exit_code = benchmark.main(args)
+
+    assert exit_code != 0
+    if write_output:
+        payload = json.loads(output.read_text(encoding="utf-8"))
+    else:
+        payload = json.loads(capsys.readouterr().out)
+    assert payload == report
 
 
 def test_benchmark_cli_prints_valid_json_without_output(capsys):

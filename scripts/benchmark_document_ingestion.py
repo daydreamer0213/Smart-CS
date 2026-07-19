@@ -47,6 +47,20 @@ _STRUCTURED_STRING_FIELDS = (
 _SAFE_ELEMENT_METADATA = frozenset(
     {"ocr", "sheet_name", "row_start", "row_end"}
 )
+_STRUCTURED_CORPUS_FIXTURE_IDS = frozenset(
+    {
+        "clean-policy",
+        "repeated-headers",
+        "leave-table",
+        "scanned-policy",
+        "mixed-policy",
+        "two-column-policy",
+        "encrypted-policy",
+        "headed-docx",
+        "multi-sheet-xlsx",
+    }
+)
+_STRUCTURED_CORPUS_REQUIRED_FACTS = 18
 
 
 def _normalize_case(case: object) -> dict | None:
@@ -486,11 +500,16 @@ def _table_association(group: list[str], elements: list, chunks: list) -> dict:
         if "table" in chunk.element_types
         and same_row(chunk.content)
     ]
+    matching_element_indexes = set(element_indexes)
+    lineage_matches = any(
+        matching_element_indexes.intersection(chunks[index].source_element_indexes)
+        for index in chunk_indexes
+    )
     return {
         "facts": group,
         "element_indexes": element_indexes,
         "chunk_indexes": chunk_indexes,
-        "passed": bool(element_indexes and chunk_indexes),
+        "passed": lineage_matches,
     }
 
 
@@ -562,7 +581,7 @@ async def _benchmark_structured_fixture(fixture_dir: Path, case: dict) -> dict:
                 route == case["expected_route"],
                 route_reason == case["expected_route_reason"],
                 quality.status == case["expected_quality_status"],
-                set(case["expected_quality_warnings"]) <= set(quality.warnings),
+                set(case["expected_quality_warnings"]) == set(quality.warnings),
                 indexable == case["expected_indexable"],
                 len(found) == required,
                 len(chunk_found) == required,
@@ -705,11 +724,17 @@ async def run_structured_benchmark(
     required = sum(len(case["required_facts"]) for case in valid_cases)
     found = sum(len(item["found_facts"]) for item in results)
     chunk_found = sum(len(item["chunk_found_facts"]) for item in results)
+    corpus_gate = (
+        len(valid_cases) == len(_STRUCTURED_CORPUS_FIXTURE_IDS)
+        and {case["id"] for case in valid_cases} == _STRUCTURED_CORPUS_FIXTURE_IDS
+        and required == _STRUCTURED_CORPUS_REQUIRED_FACTS
+    )
     fact_gate = found == required
     chunk_gate = chunk_found == required
     provenance_gate = all(item["provenance_passed"] for item in results)
     acceptance_gate = (
-        fact_gate
+        corpus_gate
+        and fact_gate
         and chunk_gate
         and provenance_gate
         and all(item["acceptance_passed"] for item in results)
@@ -732,6 +757,7 @@ async def run_structured_benchmark(
             "chunk_found_facts": chunk_found,
             "fact_recall": found / required if required else 1.0,
             "chunk_fact_recall": chunk_found / required if required else 1.0,
+            "corpus_gate": "passed" if corpus_gate else "failed",
             "parsed_fact_gate": "passed" if fact_gate else "failed",
             "chunk_fact_gate": "passed" if chunk_gate else "failed",
             "provenance_gate": "passed" if provenance_gate else "failed",
@@ -759,6 +785,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.output.write_text(payload + "\n", encoding="utf-8")
     else:
         print(payload)
+    if args.mode == "structured" and report["summary"].get("acceptance_gate") != "passed":
+        return 1
     return 0
 
 

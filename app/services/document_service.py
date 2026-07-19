@@ -63,6 +63,9 @@ async def upload_document(
     )
     db.add(doc)
     db.flush()
+    db.commit()
+    db.refresh(doc)
+    document_id = doc.id
 
     try:
         parsed = parse_structured_file(filename, file_data)
@@ -107,7 +110,6 @@ async def upload_document(
         db.refresh(doc)
         return doc
 
-    chunk_status = "active" if parsed.quality.status == "passed" else "inactive"
     chunks = []
     for index, parsed_chunk in enumerate(parsed_chunks, start=1):
         chunk = DocumentChunk(
@@ -116,7 +118,7 @@ async def upload_document(
             content=parsed_chunk.content,
             token_count=parsed_chunk.token_count,
             keywords="",
-            status=chunk_status,
+            status="inactive",
             page_start=parsed_chunk.page_start,
             page_end=parsed_chunk.page_end,
             section_path=parsed_chunk.section_path,
@@ -133,6 +135,9 @@ async def upload_document(
         db.commit()
         db.refresh(doc)
         return doc
+
+    db.commit()
+    db.refresh(doc)
 
     vector_ids: list[str] = []
     bm25_ids: list[str] = []
@@ -168,13 +173,15 @@ async def upload_document(
                     "chunk_index": chunk.chunk_index,
                 },
             )
-            chunk.embedding_id = chunk.id
 
         # BM25 rebuild — add chunks to index
         for chunk, _ in chunks:
             bm25_ids.append(chunk.id)
             bm.add(tenant_slug, chunk.id, chunk.content)
 
+        for chunk, _ in chunks:
+            chunk.status = "active"
+            chunk.embedding_id = chunk.id
         doc.status = "ready"
         db.commit()
         db.refresh(doc)
@@ -192,7 +199,12 @@ async def upload_document(
                     bm.remove(tenant_slug, chunk_id)
                 except Exception:
                     logger.error("document_bm25_cleanup_failed", chunk_id=chunk_id)
-        for chunk, _ in chunks:
+        db.rollback()
+        doc = db.query(Document).filter(Document.id == document_id).one()
+        persisted_chunks = db.query(DocumentChunk).filter(
+            DocumentChunk.document_id == document_id
+        ).all()
+        for chunk in persisted_chunks:
             chunk.embedding_id = None
             chunk.status = "inactive"
         doc.status = "failed"

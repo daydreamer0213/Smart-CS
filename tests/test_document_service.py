@@ -205,6 +205,134 @@ class TestDocumentUpload:
 
         assert doc.status == "ready"
 
+    async def test_processing_document_is_visible_to_independent_session_before_parsing(
+        self, tmp_path, monkeypatch,
+    ):
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        from app.models import Base
+        from app.models.document import Document
+        from app.models.tenant import Tenant
+        from app.services.document_service import upload_document
+
+        engine = create_engine(f"sqlite:///{(tmp_path / 'processing.db').as_posix()}")
+        Base.metadata.create_all(engine)
+        session_factory = sessionmaker(bind=engine)
+        upload_db = session_factory()
+        observer_db = session_factory()
+        tenant = Tenant(
+            slug="independent-observer",
+            name="Independent Observer",
+            config_json={},
+            is_active=True,
+        )
+        upload_db.add(tenant)
+        upload_db.commit()
+        observed_statuses = []
+
+        def observe_processing_document(filename, _data):
+            observer_db.expire_all()
+            document = observer_db.query(Document).filter_by(filename=filename).first()
+            observed_statuses.append(document.status if document else None)
+            return _parsed_document()
+
+        monkeypatch.setattr(
+            "app.services.document_service.parse_structured_file",
+            observe_processing_document,
+        )
+        monkeypatch.setattr(
+            "app.services.document_service.chunk_document",
+            lambda *_: [_knowledge_chunk()],
+        )
+
+        try:
+            doc = await upload_document(
+                upload_db,
+                tenant.id,
+                tenant.slug,
+                "visible.txt",
+                b"visible processing document",
+            )
+        finally:
+            observer_db.close()
+            upload_db.close()
+            engine.dispose()
+
+        assert observed_statuses == ["processing"]
+        assert doc.status == "ready"
+
+    async def test_ready_commit_failure_rolls_back_and_persists_failed_checkpoint(
+        self, db, test_tenant, monkeypatch,
+    ):
+        from app.models.document import Document
+        from app.services.document_service import list_chunks, upload_document
+
+        monkeypatch.setattr(
+            "app.services.document_service.parse_structured_file",
+            lambda *_: _parsed_document(),
+        )
+        monkeypatch.setattr(
+            "app.services.document_service.chunk_document",
+            lambda *_: [_knowledge_chunk()],
+        )
+
+        real_commit = db.commit
+        real_rollback = db.rollback
+        state = {"failed_once": False, "poisoned": False, "rollbacks": 0}
+
+        def fail_ready_commit_once():
+            ready = any(
+                isinstance(item, Document) and item.status == "ready"
+                for item in db.identity_map.values()
+            )
+            if ready and not state["failed_once"]:
+                db.flush()
+                state["failed_once"] = True
+                state["poisoned"] = True
+                raise RuntimeError("ready commit failed at C:\\secret token=abc")
+            if state["poisoned"]:
+                raise AssertionError("rollback required before another commit")
+            return real_commit()
+
+        def tracked_rollback():
+            state["rollbacks"] += 1
+            state["poisoned"] = False
+            return real_rollback()
+
+        monkeypatch.setattr(db, "commit", fail_ready_commit_once)
+        monkeypatch.setattr(db, "rollback", tracked_rollback)
+
+        upload_error = None
+        doc = None
+        try:
+            doc = await upload_document(
+                db,
+                test_tenant.id,
+                test_tenant.slug,
+                "ready-commit.txt",
+                b"ready commit failure",
+            )
+        except Exception as error:
+            upload_error = error
+        finally:
+            if state["poisoned"]:
+                state["poisoned"] = False
+                real_rollback()
+            monkeypatch.setattr(db, "commit", real_commit)
+            monkeypatch.setattr(db, "rollback", real_rollback)
+
+        assert upload_error is None
+        assert doc is not None
+        chunks = list_chunks(db, doc.id)
+
+        assert state == {"failed_once": True, "poisoned": False, "rollbacks": 1}
+        assert doc.status == "failed"
+        assert doc.error_message == "Document indexing failed."
+        assert len(chunks) == 1
+        assert chunks[0].status == "inactive"
+        assert chunks[0].embedding_id is None
+
     async def test_passed_upload_persists_provenance_and_indexes_controlled_data(
         self, db, test_tenant, monkeypatch,
     ):

@@ -52,6 +52,8 @@ async def test_document_upload_accepts_and_returns_audience_roles(
 async def test_document_upload_returns_explicit_provenance_without_parser_metadata(
     admin_client, test_tenant, monkeypatch,
 ):
+    secret = r"C:\customer\private.pdf token=upload-secret"
+
     async def fake_upload(*_args, **_kwargs):
         return SimpleNamespace(
             id="doc-provenance",
@@ -64,11 +66,18 @@ async def test_document_upload_returns_explicit_provenance_without_parser_metada
             page_count=4,
             parse_quality_status="review_required",
             parse_quality_details={
-                "metrics": {"page_count": 4},
-                "warnings": ["missing_page_coverage"],
+                "metrics": {
+                    "page_count": 4,
+                    "elapsed_ms": 12.5,
+                    "private_path": secret,
+                    "heading_count": {"metadata": secret},
+                },
+                "warnings": ["missing_page_coverage", secret],
+                "metadata": {"secret": secret},
+                "arbitrary": secret,
             },
-            error_message=None,
-            parser_metadata={"customer_secret": "must-not-leak"},
+            error_message=secret,
+            parser_metadata={"customer_secret": secret},
         )
 
     monkeypatch.setattr(document_service, "upload_document", fake_upload)
@@ -90,11 +99,12 @@ async def test_document_upload_returns_explicit_provenance_without_parser_metada
         "page_count": 4,
         "parse_quality_status": "review_required",
         "parse_quality_details": {
-            "metrics": {"page_count": 4},
+            "metrics": {"page_count": 4, "elapsed_ms": 12.5},
             "warnings": ["missing_page_coverage"],
         },
-        "error_message": None,
+        "error_message": "Document processing failed.",
     }
+    assert secret not in response.text
 
 
 async def test_document_upload_accepts_repeated_audience_roles(
@@ -163,6 +173,7 @@ async def test_document_list_returns_audience_roles(admin_client, db, test_tenan
 async def test_document_list_returns_explicit_provenance_and_legacy_nulls(
     admin_client, db, test_tenant,
 ):
+    secret = r"C:\customer\private.pdf token=list-secret"
     db.add_all([
         Document(
             tenant_id=test_tenant.id,
@@ -176,9 +187,15 @@ async def test_document_list_returns_explicit_provenance_and_legacy_nulls(
             page_count=2,
             parse_quality_status="review_required",
             parse_quality_details={
-                "metrics": {"page_count": 2},
-                "warnings": ["missing_page_coverage"],
+                "metrics": {
+                    "page_count": 2,
+                    "ocr_confidence": 0.9,
+                    "private_path": secret,
+                },
+                "warnings": ["missing_page_coverage", secret],
+                "metadata": {"secret": secret},
             },
+            error_message=secret,
         ),
         Document(
             tenant_id=test_tenant.id,
@@ -187,6 +204,7 @@ async def test_document_list_returns_explicit_provenance_and_legacy_nulls(
             file_size=6,
             file_hash="legacy-api-provenance-hash",
             status="ready",
+            error_message="Document indexing failed.",
         ),
     ])
     db.commit()
@@ -200,14 +218,18 @@ async def test_document_list_returns_explicit_provenance_and_legacy_nulls(
     assert items["structured.pdf"]["parser_name"] == "docling"
     assert items["structured.pdf"]["page_count"] == 2
     assert items["structured.pdf"]["parse_quality_status"] == "review_required"
-    assert items["structured.pdf"]["parse_quality_details"]["warnings"] == [
-        "missing_page_coverage"
-    ]
+    assert items["structured.pdf"]["parse_quality_details"] == {
+        "metrics": {"page_count": 2, "ocr_confidence": 0.9},
+        "warnings": ["missing_page_coverage"],
+    }
+    assert items["structured.pdf"]["error_message"] == "Document processing failed."
     assert items["legacy.txt"]["parser_name"] is None
     assert items["legacy.txt"]["parser_version"] is None
     assert items["legacy.txt"]["page_count"] is None
     assert items["legacy.txt"]["parse_quality_status"] is None
     assert items["legacy.txt"]["parse_quality_details"] is None
+    assert items["legacy.txt"]["error_message"] == "Document indexing failed."
+    assert secret not in response.text
 
 
 async def test_document_chunks_return_explicit_provenance(

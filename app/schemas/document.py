@@ -1,6 +1,30 @@
 """Document upload/management schemas."""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+from app.core.parsing.contracts import ParseWarning
+
+
+QualityMetricName = Literal[
+    "page_count",
+    "usable_text_pages",
+    "empty_pages",
+    "character_count",
+    "table_count",
+    "heading_count",
+    "ocr_pages",
+    "elapsed_ms",
+    "ocr_confidence",
+]
+
+
+class ParseQualityDetailsResponse(BaseModel):
+    metrics: dict[QualityMetricName, int | float] = Field(default_factory=dict)
+    warnings: list[ParseWarning] = Field(default_factory=list)
+
+    model_config = {"extra": "forbid"}
 
 
 class DocumentResponse(BaseModel):
@@ -18,7 +42,7 @@ class DocumentResponse(BaseModel):
     parser_version: str | None = None
     page_count: int | None = None
     parse_quality_status: str | None = None
-    parse_quality_details: dict[str, object] | None = None
+    parse_quality_details: ParseQualityDetailsResponse | None = None
     created_at: str
     updated_at: str
 
@@ -61,5 +85,5 @@ class DocumentUploadResponse(BaseModel):
     parser_version: str | None = None
     page_count: int | None = None
     parse_quality_status: str | None = None
-    parse_quality_details: dict[str, object] | None = None
+    parse_quality_details: ParseQualityDetailsResponse | None = None
     error_message: str | None = None

@@ -2,7 +2,8 @@
 
 import structlog
 
-from typing import Literal
+from math import isfinite
+from typing import get_args, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
@@ -11,18 +12,66 @@ logger = structlog.get_logger()
 
 from app.api.admin.auth import admin_auth
 from app.api.deps import get_db, get_tenant
+from app.core.parsing.contracts import ParseWarning
 from app.models.tenant import Tenant
 from app.schemas.document import (
     DocumentChunkResponse,
     DocumentListResponse,
     DocumentResponse,
     DocumentUploadResponse,
+    ParseQualityDetailsResponse,
+    QualityMetricName,
 )
 from app.services import document_service
 
 router = APIRouter()
 
 MAX_FILE_SIZE = 20 * 1024 * 1024
+GENERIC_PROCESSING_ERROR = "Document processing failed."
+CONTROLLED_ERROR_MESSAGES = frozenset({
+    "Document parsing failed.",
+    "Document indexing failed.",
+    "No text content extracted from file.",
+    GENERIC_PROCESSING_ERROR,
+})
+QUALITY_METRIC_NAMES = frozenset(get_args(QualityMetricName))
+PARSE_WARNINGS = frozenset(get_args(ParseWarning))
+
+
+def _public_quality_details(value) -> ParseQualityDetailsResponse | None:
+    if not isinstance(value, dict):
+        return None
+    raw_metrics = value.get("metrics")
+    metrics = {
+        key: metric
+        for key, metric in raw_metrics.items()
+        if key in QUALITY_METRIC_NAMES
+        and isinstance(metric, (int, float))
+        and not isinstance(metric, bool)
+        and isfinite(metric)
+    } if isinstance(raw_metrics, dict) else {}
+    raw_warnings = value.get("warnings")
+    warnings = [
+        warning for warning in raw_warnings
+        if isinstance(warning, str) and warning in PARSE_WARNINGS
+    ] if isinstance(raw_warnings, list) else []
+    return ParseQualityDetailsResponse(metrics=metrics, warnings=warnings)
+
+
+def _public_provenance(document) -> dict[str, object]:
+    error_message = getattr(document, "error_message", None)
+    if error_message and error_message not in CONTROLLED_ERROR_MESSAGES:
+        error_message = GENERIC_PROCESSING_ERROR
+    return {
+        "parser_name": getattr(document, "parser_name", None),
+        "parser_version": getattr(document, "parser_version", None),
+        "page_count": getattr(document, "page_count", None),
+        "parse_quality_status": getattr(document, "parse_quality_status", None),
+        "parse_quality_details": _public_quality_details(
+            getattr(document, "parse_quality_details", None)
+        ),
+        "error_message": error_message or None,
+    }
 
 
 @router.post("/api/v1/admin/{tenant_slug}/documents/upload", status_code=201)
@@ -61,12 +110,7 @@ async def upload(
         chunk_count=doc.chunk_count,
         status=doc.status,
         audience_roles=doc.audience_roles or [],
-        parser_name=getattr(doc, "parser_name", None),
-        parser_version=getattr(doc, "parser_version", None),
-        page_count=getattr(doc, "page_count", None),
-        parse_quality_status=getattr(doc, "parse_quality_status", None),
-        parse_quality_details=getattr(doc, "parse_quality_details", None),
-        error_message=getattr(doc, "error_message", None),
+        **_public_provenance(doc),
     )
 
 
@@ -86,13 +130,8 @@ async def list_docs(
             id=d.id, tenant_id=d.tenant_id, filename=d.filename,
             file_type=d.file_type, file_size=d.file_size, file_hash=d.file_hash,
             chunk_count=d.chunk_count, status=d.status,
-            error_message=d.error_message,
             audience_roles=d.audience_roles or [],
-            parser_name=d.parser_name,
-            parser_version=d.parser_version,
-            page_count=d.page_count,
-            parse_quality_status=d.parse_quality_status,
-            parse_quality_details=d.parse_quality_details,
+            **_public_provenance(d),
             created_at=d.created_at.isoformat() if d.created_at else "",
             updated_at=d.updated_at.isoformat() if d.updated_at else "",
         ))

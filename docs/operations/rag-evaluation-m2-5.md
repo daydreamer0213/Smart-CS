@@ -13,8 +13,6 @@ M2-5 不调用 FastGPT、LLM 或 LLM judge。离线 `HashEmbedding` 仅验证向
 在项目根目录执行。所有运行时数据库、Chroma 数据和报告都写入 `D:\DevData\smartcs`，不写入 `C:`。
 
 ```powershell
-cd D:\2026.07.09\AAA\smart-cs
-
 & D:\2026.07.09\conda-envs\smart-cs\python.exe scripts\evaluate_rag_retrieval.py `
   --fixture-dir tests\fixtures\documents `
   --work-dir D:\DevData\smartcs\rag-eval\m2-5 `

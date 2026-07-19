@@ -41,9 +41,9 @@ D:\2026.07.09\conda\Scripts\conda.exe
 Large caches:
 
 ```text
-D:\2026.07.09\smartcs-cache\pip
-D:\2026.07.09\smartcs-cache\huggingface
-D:\2026.07.09\smartcs-cache\torch
+D:\DevData\smartcs\pip
+D:\DevData\smartcs\huggingface
+D:\DevData\smartcs\torch
 ```
 
 Old paths such as `D:\AAA`, `D:\conda-envs`, and `D:\conda` are historical.
@@ -105,9 +105,9 @@ Important files:
 
 ## Core Commands
 
-```powershell
-cd D:\2026.07.09\AAA\smart-cs
+Run these commands from the repository root:
 
+```powershell
 D:\2026.07.09\conda-envs\smart-cs\python.exe -m pytest tests/ -v
 
 D:\2026.07.09\conda-envs\smart-cs\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000

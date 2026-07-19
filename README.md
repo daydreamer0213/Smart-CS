@@ -70,8 +70,9 @@ D:\2026.07.09\conda-envs\smart-cs\python.exe
 
 ## 测试
 
+在仓库根目录执行：
+
 ```powershell
-cd D:\2026.07.09\AAA\smart-cs
 & D:\2026.07.09\conda-envs\smart-cs\python.exe -m pytest tests -q
 ```
 
@@ -80,7 +81,6 @@ cd D:\2026.07.09\AAA\smart-cs
 M2-2 与 M2-5 是分层门禁：前者验证解析、OCR、结构化分块和来源元数据；后者验证一组固定 HR 问题能否穿过真实的治理 SQL、BM25、Chroma 和 RRF 检索边界。复现 M2-5：
 
 ```powershell
-cd D:\2026.07.09\AAA\smart-cs
 & D:\2026.07.09\conda-envs\smart-cs\python.exe scripts\evaluate_rag_retrieval.py `
   --fixture-dir tests\fixtures\documents `
   --work-dir D:\DevData\smartcs\rag-eval\m2-5 `

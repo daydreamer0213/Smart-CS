@@ -43,9 +43,9 @@ conda:  D:\2026.07.09\conda\Scripts\conda.exe
 大文件和依赖缓存放 D 盘：
 
 ```text
-D:\2026.07.09\smartcs-cache\pip
-D:\2026.07.09\smartcs-cache\huggingface
-D:\2026.07.09\smartcs-cache\torch
+D:\DevData\smartcs\pip
+D:\DevData\smartcs\huggingface
+D:\DevData\smartcs\torch
 ```
 
 ## 当前状态
@@ -95,9 +95,9 @@ D:\2026.07.09\smartcs-cache\torch
 
 ## 常用命令
 
-```powershell
-cd D:\2026.07.09\AAA\smart-cs
+以下命令都从当前仓库根目录执行：
 
+```powershell
 D:\2026.07.09\conda-envs\smart-cs\python.exe -m pytest tests/ -v
 
 D:\2026.07.09\conda-envs\smart-cs\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
@@ -110,7 +110,7 @@ D:\2026.07.09\conda-envs\smart-cs\python.exe scripts\evaluate_rag_retrieval.py -
 离线演示建议使用临时数据库和临时 Chroma 目录：
 
 ```powershell
-$demoRoot="D:/2026.07.09/smartcs-cache/demo-" + (Get-Date -Format "yyyyMMdd-HHmmss")
+$demoRoot="D:/DevData/smartcs/demo-" + (Get-Date -Format "yyyyMMdd-HHmmss")
 New-Item -ItemType Directory -Force -Path $demoRoot | Out-Null
 $env:EMBEDDING_PROVIDER="hash"
 $env:DATABASE_URL="sqlite:///$demoRoot/smartcs-demo.db"

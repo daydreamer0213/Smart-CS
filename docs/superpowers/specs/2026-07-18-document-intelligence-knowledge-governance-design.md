@@ -15,24 +15,25 @@ HR Agent boundaries.
 This milestone improves the trustworthiness of policy answers. It does not try
 to build a complete HRIS or a generic enterprise data platform.
 
-## Current Baseline
+## Historical Baseline Before M2
 
-The existing path is functional for clean, text-layer documents:
+At the start of M2, the existing path was functional for clean, text-layer
+documents:
 
 ```text
 upload -> parse to plain text -> split -> embed -> SQL + ChromaDB + BM25
 ```
 
-It already provides tenant-scoped hash deduplication, document-level audience
-roles, processing status, embedding retries, index deletion, and admin chunk
-inspection.
+That baseline already provided tenant-scoped hash deduplication, document-level
+audience roles, processing status, embedding retries, index deletion, and admin
+chunk inspection.
 
-The current PDF path uses PyMuPDF `page.get_text()` and joins every page into a
-single string. The current chunker splits Markdown headings or blank-line
-paragraphs, asks the configured LLM to split oversized blocks, and falls back
+The baseline PDF path used PyMuPDF `page.get_text()` and joined every page into a
+single string. The baseline chunker split Markdown headings or blank-line
+paragraphs, asked the configured LLM to split oversized blocks, and fell back
 to an 800-character recursive splitter with 100-character overlap.
 
-The verified limitations are:
+The verified limitations at the start of M2 were:
 
 - no OCR or scanned-PDF route;
 - no layout, reading-order, table, image, header, or footer representation;
@@ -47,8 +48,9 @@ The verified limitations are:
 - no ingestion lineage connecting source file, parser, chunker, embedding model,
   and resulting index entries.
 
-Therefore, "PDF supported" currently means clean text extraction works. It
-does not mean complex enterprise PDFs are recognized accurately.
+At that time, "PDF supported" meant clean text extraction worked. It did not
+mean complex enterprise PDFs were recognized accurately. The delivered state is
+recorded in the milestone sections below.
 
 ## Chosen Approach
 

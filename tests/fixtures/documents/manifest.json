@@ -1,14 +1,216 @@
 {
   "schema_version": 1,
   "fixtures": [
-    {"id": "clean-policy", "filename": "clean_policy.pdf", "format": "pdf", "category": "clean_text", "expected_baseline_status": "parsed", "expected_page_count": 2, "expected_missing_facts": [], "expected_chunk_count": 2, "required_facts": ["工龄满十年的员工每年享有十天年假。"]},
-    {"id": "repeated-headers", "filename": "repeated_headers.pdf", "format": "pdf", "category": "repeated_header_footer", "expected_baseline_status": "parsed", "expected_page_count": 3, "expected_missing_facts": [], "expected_chunk_count": 3, "required_facts": ["年假申请应提前三个工作日提交。", "病假应提供医疗证明。", "婚假应一次性休完。"]},
-    {"id": "leave-table", "filename": "leave_table.pdf", "format": "pdf", "category": "table", "expected_baseline_status": "parsed", "expected_page_count": 1, "expected_missing_facts": [], "expected_chunk_count": 1, "required_facts": ["工龄", "年假天数", "20年以上", "15天"]},
-    {"id": "scanned-policy", "filename": "scanned_policy.pdf", "format": "pdf", "category": "scanned", "expected_baseline_status": "error", "expected_page_count": 1, "expected_missing_facts": ["育儿假每年五天。"], "expected_chunk_count": 0, "required_facts": ["育儿假每年五天。"]},
-    {"id": "mixed-policy", "filename": "mixed_policy.pdf", "format": "pdf", "category": "mixed_text_scan", "expected_baseline_status": "parsed", "expected_page_count": 2, "expected_missing_facts": ["驻外补贴标准为每月3000元。"], "expected_chunk_count": 1, "required_facts": ["驻外员工住宿由公司统一安排。", "驻外补贴标准为每月3000元。"]},
-    {"id": "two-column-policy", "filename": "two_column_policy.pdf", "format": "pdf", "category": "two_column", "expected_baseline_status": "parsed", "expected_page_count": 1, "expected_missing_facts": [], "expected_chunk_count": 1, "required_facts": ["新员工应在首日完成身份核验。", "离职员工应在三天内归还设备。"]},
-    {"id": "encrypted-policy", "filename": "encrypted_policy.pdf", "format": "pdf", "category": "encrypted", "expected_baseline_status": "error", "expected_page_count": 1, "expected_missing_facts": [], "expected_chunk_count": 0, "required_facts": []},
-    {"id": "headed-docx", "filename": "headed_policy.docx", "format": "docx", "category": "headed_docx", "expected_baseline_status": "parsed", "expected_missing_facts": [], "expected_chunk_count": 2, "required_facts": ["员工证明开具制度", "在职证明应在两个工作日内开具。"]},
-    {"id": "multi-sheet-xlsx", "filename": "hr_contacts.xlsx", "format": "xlsx", "category": "multi_sheet_xlsx", "expected_baseline_status": "parsed", "expected_missing_facts": [], "expected_chunk_count": 1, "required_facts": ["payroll@example.test", "上海", "测试联系人"]}
+    {
+      "id": "clean-policy",
+      "filename": "clean_policy.pdf",
+      "format": "pdf",
+      "category": "clean_text",
+      "expected_baseline_status": "parsed",
+      "expected_page_count": 2,
+      "expected_missing_facts": [],
+      "expected_chunk_count": 2,
+      "required_facts": ["工龄满十年的员工每年享有十天年假。"],
+      "expected_structured_status": "parsed",
+      "expected_route": "native",
+      "expected_route_reason": "clean_text",
+      "expected_quality_status": "passed",
+      "expected_quality_warnings": [],
+      "expected_indexable": true,
+      "expected_fact_provenance": [
+        {"fact": "工龄满十年的员工每年享有十天年假。", "page_start": 2, "page_end": 2, "section_path": []}
+      ],
+      "expected_fact_order": [],
+      "expected_table_associations": []
+    },
+    {
+      "id": "repeated-headers",
+      "filename": "repeated_headers.pdf",
+      "format": "pdf",
+      "category": "repeated_header_footer",
+      "expected_baseline_status": "parsed",
+      "expected_page_count": 3,
+      "expected_missing_facts": [],
+      "expected_chunk_count": 3,
+      "required_facts": [
+        "年假申请应提前三个工作日提交。",
+        "病假应提供医疗证明。",
+        "婚假应一次性休完。"
+      ],
+      "expected_structured_status": "parsed",
+      "expected_route": "native",
+      "expected_route_reason": "clean_text",
+      "expected_quality_status": "passed",
+      "expected_quality_warnings": [],
+      "expected_indexable": true,
+      "expected_fact_provenance": [
+        {"fact": "年假申请应提前三个工作日提交。", "page_start": 1, "page_end": 1, "section_path": []},
+        {"fact": "病假应提供医疗证明。", "page_start": 2, "page_end": 2, "section_path": []},
+        {"fact": "婚假应一次性休完。", "page_start": 3, "page_end": 3, "section_path": []}
+      ],
+      "expected_fact_order": [],
+      "expected_table_associations": []
+    },
+    {
+      "id": "leave-table",
+      "filename": "leave_table.pdf",
+      "format": "pdf",
+      "category": "table",
+      "expected_baseline_status": "parsed",
+      "expected_page_count": 1,
+      "expected_missing_facts": [],
+      "expected_chunk_count": 1,
+      "required_facts": ["工龄", "年假天数", "20年以上", "15天"],
+      "expected_structured_status": "parsed",
+      "expected_route": "advanced",
+      "expected_route_reason": "table_layout",
+      "expected_quality_status": "passed",
+      "expected_quality_warnings": [],
+      "expected_indexable": true,
+      "expected_fact_provenance": [
+        {"fact": "工龄", "page_start": 1, "page_end": 1, "section_path": ["年 假 天 数 对 照 表"]},
+        {"fact": "年假天数", "page_start": 1, "page_end": 1, "section_path": ["年 假 天 数 对 照 表"]},
+        {"fact": "20年以上", "page_start": 1, "page_end": 1, "section_path": ["年 假 天 数 对 照 表"]},
+        {"fact": "15天", "page_start": 1, "page_end": 1, "section_path": ["年 假 天 数 对 照 表"]}
+      ],
+      "expected_fact_order": [],
+      "expected_table_associations": [
+        ["工龄", "年假天数"],
+        ["20年以上", "15天"]
+      ]
+    },
+    {
+      "id": "scanned-policy",
+      "filename": "scanned_policy.pdf",
+      "format": "pdf",
+      "category": "scanned",
+      "expected_baseline_status": "error",
+      "expected_page_count": 1,
+      "expected_missing_facts": ["育儿假每年五天。"],
+      "expected_chunk_count": 0,
+      "required_facts": ["育儿假每年五天。"],
+      "expected_structured_status": "parsed",
+      "expected_route": "advanced",
+      "expected_route_reason": "sparse_text_page",
+      "expected_quality_status": "passed",
+      "expected_quality_warnings": [],
+      "expected_indexable": true,
+      "expected_fact_provenance": [
+        {"fact": "育儿假每年五天。", "page_start": 1, "page_end": 1, "section_path": []}
+      ],
+      "expected_fact_order": [],
+      "expected_table_associations": []
+    },
+    {
+      "id": "mixed-policy",
+      "filename": "mixed_policy.pdf",
+      "format": "pdf",
+      "category": "mixed_text_scan",
+      "expected_baseline_status": "parsed",
+      "expected_page_count": 2,
+      "expected_missing_facts": ["驻外补贴标准为每月3000元。"],
+      "expected_chunk_count": 1,
+      "required_facts": ["驻外员工住宿由公司统一安排。", "驻外补贴标准为每月3000元。"],
+      "expected_structured_status": "parsed",
+      "expected_route": "advanced",
+      "expected_route_reason": "sparse_text_page",
+      "expected_quality_status": "passed",
+      "expected_quality_warnings": [],
+      "expected_indexable": true,
+      "expected_fact_provenance": [
+        {"fact": "驻外员工住宿由公司统一安排。", "page_start": 1, "page_end": 1, "section_path": []},
+        {"fact": "驻外补贴标准为每月3000元。", "page_start": 2, "page_end": 2, "section_path": []}
+      ],
+      "expected_fact_order": ["驻外员工住宿由公司统一安排。", "驻外补贴标准为每月3000元。"],
+      "expected_table_associations": []
+    },
+    {
+      "id": "two-column-policy",
+      "filename": "two_column_policy.pdf",
+      "format": "pdf",
+      "category": "two_column",
+      "expected_baseline_status": "parsed",
+      "expected_page_count": 1,
+      "expected_missing_facts": [],
+      "expected_chunk_count": 1,
+      "required_facts": ["新员工应在首日完成身份核验。", "离职员工应在三天内归还设备。"],
+      "expected_structured_status": "parsed",
+      "expected_route": "advanced",
+      "expected_route_reason": "multi_column_layout",
+      "expected_quality_status": "passed",
+      "expected_quality_warnings": [],
+      "expected_indexable": true,
+      "expected_fact_provenance": [
+        {"fact": "新员工应在首日完成身份核验。", "page_start": 1, "page_end": 1, "section_path": []},
+        {"fact": "离职员工应在三天内归还设备。", "page_start": 1, "page_end": 1, "section_path": []}
+      ],
+      "expected_fact_order": ["新员工应在首日完成身份核验。", "离职员工应在三天内归还设备。"],
+      "expected_table_associations": []
+    },
+    {
+      "id": "encrypted-policy",
+      "filename": "encrypted_policy.pdf",
+      "format": "pdf",
+      "category": "encrypted",
+      "expected_baseline_status": "error",
+      "expected_page_count": 1,
+      "expected_missing_facts": [],
+      "expected_chunk_count": 0,
+      "required_facts": [],
+      "expected_structured_status": "blocked",
+      "expected_route": "rejected",
+      "expected_route_reason": "encrypted",
+      "expected_quality_status": "failed",
+      "expected_quality_warnings": ["encrypted_input"],
+      "expected_indexable": false,
+      "expected_fact_provenance": [],
+      "expected_fact_order": [],
+      "expected_table_associations": []
+    },
+    {
+      "id": "headed-docx",
+      "filename": "headed_policy.docx",
+      "format": "docx",
+      "category": "headed_docx",
+      "expected_baseline_status": "parsed",
+      "expected_missing_facts": [],
+      "expected_chunk_count": 2,
+      "required_facts": ["员工证明开具制度", "在职证明应在两个工作日内开具。"],
+      "expected_structured_status": "parsed",
+      "expected_route": "native",
+      "expected_route_reason": "native_format",
+      "expected_quality_status": "passed",
+      "expected_quality_warnings": [],
+      "expected_indexable": true,
+      "expected_fact_provenance": [
+        {"fact": "员工证明开具制度", "page_start": null, "page_end": null, "section_path": ["员工证明开具制度"]},
+        {"fact": "在职证明应在两个工作日内开具。", "page_start": null, "page_end": null, "section_path": ["员工证明开具制度", "办理时效"]}
+      ],
+      "expected_fact_order": [],
+      "expected_table_associations": []
+    },
+    {
+      "id": "multi-sheet-xlsx",
+      "filename": "hr_contacts.xlsx",
+      "format": "xlsx",
+      "category": "multi_sheet_xlsx",
+      "expected_baseline_status": "parsed",
+      "expected_missing_facts": [],
+      "expected_chunk_count": 1,
+      "required_facts": ["payroll@example.test", "上海", "测试联系人"],
+      "expected_structured_status": "parsed",
+      "expected_route": "native",
+      "expected_route_reason": "native_format",
+      "expected_quality_status": "passed",
+      "expected_quality_warnings": [],
+      "expected_indexable": true,
+      "expected_fact_provenance": [
+        {"fact": "payroll@example.test", "page_start": null, "page_end": null, "section_path": [], "metadata": {"sheet_name": "HR联系人"}},
+        {"fact": "上海", "page_start": null, "page_end": null, "section_path": [], "metadata": {"sheet_name": "办公地点"}},
+        {"fact": "测试联系人", "page_start": null, "page_end": null, "section_path": [], "metadata": {"sheet_name": "办公地点"}}
+      ],
+      "expected_fact_order": [],
+      "expected_table_associations": []
+    }
   ]
 }

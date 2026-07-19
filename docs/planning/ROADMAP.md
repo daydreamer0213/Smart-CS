@@ -24,9 +24,13 @@
 - 当前基线覆盖 9 个语料：7 个解析成功、2 个错误、18 个必需事实中找到 16 个（88.89%）。这是合成语料上的当前基线，不是通用 PDF 准确率。
 - 已记录扫描件、加密 PDF、混合文本/图像页、表格和双栏文档的已知差距，供后续阶段验证改进。
 
-### M2-2: 高级解析与 OCR 路由 [status: pending]
+### M2-2: 高级解析与 OCR 路由 [status: delivered]
+**Delivered:** 2026-07-19
 
-- 待引入并评估扫描件、复杂版式和表格的高级解析能力；Milestone 2 仍在进行中。
+- 保留 M2-1 的 9 语料、7 个解析成功、2 个错误和 16/18 事实基线，新增独立 structured benchmark，避免改进结果覆盖历史口径。
+- 已交付 PyMuPDF 快速路径、Docling/Tesseract 高级路由、确定性结构化分块、页/章节/source lineage、质量门禁和 page-aware citation。
+- 合成语料 gate 达到 18/18 parsed facts、18/18 chunk facts；表格关联、双栏顺序、PDF/DOCX/XLSX provenance 均通过，加密 PDF 被阻止索引并只返回安全原因。
+- 结果仅证明合成语料验收通过；CPU OCR 存在运行差异，document version/reindex lifecycle 及双外部索引的重试/对账仍留待 M2-3/M2-4，Milestone 2 继续进行。
 
 ### Delivery Scope
 

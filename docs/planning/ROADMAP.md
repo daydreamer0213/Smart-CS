@@ -14,7 +14,7 @@
 - [done] 人工处理闭环：员工确认后创建正式请求，owner/admin 指派或解决，跨租户访问返回 403。
 - [done] 工程交付：Alembic 迁移、pytest 回归、隔离数据演示脚本、运行手册与面试材料。
 
-## Milestone 2: 文档智能与知识治理 [status: in progress]
+## Milestone 2: 文档智能与知识治理 [status: delivered]
 **Goal:** 将基础文档导入升级为可评测、可治理的企业 HR 知识管道，使非标准制度文档经过解析、质量检查、版本管理和可追溯索引后再供 Agent 使用。
 
 ### M2-1: 文档契约、合成语料与基准测试 [status: delivered]
@@ -46,20 +46,29 @@
 - reindex 创建同业务版本的下一索引代次；解析、质量、Embedding、Chroma 或 BM25 失败时旧版本继续可用，部分外部写入执行尽力清理。
 - 当前发布版本禁止删除；非当前版本删除时仅在没有共享引用后清理原件。
 
+### M2-5: RAG 检索评测与交付 [status: delivered]
+**Delivered:** 2026-07-19
+
+- M2-2 parser gate 的历史成功报告：9 个 fixture、8 个解析成功、1 个加密 PDF 被阻止索引，18/18 parsed facts、18/18 chunk facts 与 provenance 通过。CPU 上的 Docling/OCR 在当前内存压力下仍可能波动，因此该结果是固定语料与环境下的验收记录。
+- M2-5 retrieval gate 与 parser gate 独立：8 个已索引 fixture、11 个仅由受信 facts 组成的 curated source chunks、12 条 golden queries、`top_k=3`。
+- 实测 Recall@3 为 `11/12 = 91.67%`，MRR 为 `91.67%`，已召回来源 provenance accuracy 为 `100%`，门禁通过；`payroll-contact` 是唯一失败 query。
+- 贡献统计为 BM25 11、vector 0。离线 HashEmbedding 非语义，只验证向量通路；评测不调用 FastGPT、LLM 或 LLM judge，不能据此声称混合语义检索质量。
+- 报告和命令见 [M2-5 RAG 评测运行手册](../operations/rag-evaluation-m2-5.md)。这是 curated source-chunk 回归门禁，不是通用 PDF 准确率或生产 SLA。
+
 ### Delivery Scope
 
 1. Docling/OCR：保留 PyMuPDF 数字 PDF 快速路径，为扫描件、复杂版式和表格增加高级解析路由。
 2. 结构化元数据：保留页码、章节路径、表格标题与表头、解析器版本和索引代次。
 3. 文档治理：增加原文件存储、文档版本、生效/失效日期、负责人、审核和发布状态。
 4. 质量门禁：低质量、异常或解析不完整的文档进入人工复核，不静默发布到员工知识库。
-5. 可量化评测：建立 PDF/DOCX/XLSX 测试语料、解析基准和 RAG golden query 评测集。
+5. 可量化评测：已建立 PDF/DOCX/XLSX 测试语料、解析基准和 RAG golden query 评测集。
 
 ### Stage Gate
 
 - 每个已提交测试文档都有确定性的解析与分块断言。
 - 扫描件、表格和复杂 PDF 的处理结果可查看、可诊断、可追溯。
 - 所有可检索块保留来源页码和治理元数据，不破坏租户与受众权限。
-- 检索 Recall@3 在约定测试集上达到至少 90%，完整回归测试通过。
+- 检索 Recall@3 在约定测试集上达到至少 90%，完整回归测试通过；当前实测 91.67%，限制见 M2-5。
 
 ## Milestone 3: 真实 HR 工具接入 [status: pending]
 **Goal:** 证明 Agent 不只回答制度问题，还能在身份、权限和确认边界内调用真实 HR/OA 系统能力；不自研完整 HRIS。

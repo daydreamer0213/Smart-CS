@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-18
 
-**Status:** Approved; M2-1 delivered, M2-2 authorized on 2026-07-18
+**Status:** Delivered; M2-1 through M2-5 completed on 2026-07-19
 
 ## Goal
 
@@ -272,6 +272,11 @@ Persist page, section, table, parser, token, and index metadata. Replace chat
 model chunking with deterministic, tokenizer-aware structure chunking and add
 page-aware citations.
 
+**Delivered 2026-07-19:** Structured chunks preserve page spans, section and
+table metadata, parser/chunker lineage, deterministic token-aware boundaries,
+and page-aware citations. M2-3 classifies parse quality as passed,
+review-required, or failed before publication.
+
 ### Stage 4: Governance Lifecycle
 
 Add original-file storage, version/effective-date fields, review status,
@@ -289,6 +294,18 @@ failures leave the last published generation available.
 Run parsing and retrieval benchmarks, document results and limitations, update
 the demo, and produce resume/interview explanations. Only benchmark-supported
 advanced retrieval improvements are considered here.
+
+**Delivered 2026-07-19:** The M2-2 parser gate's historical success report is
+9 fixtures, 8 parsed, 1 encrypted fixture blocked, and 18/18 parsed facts,
+chunk facts, and provenance passed. CPU Docling/OCR may vary under current
+memory pressure. The separate M2-5 retrieval gate indexes 8 fixtures into 11
+curated facts-only source chunks and asks 12 golden queries at `top_k=3`.
+Recall@3 is 11/12 (91.67%), MRR is 91.67%, recalled-source provenance is 100%,
+and the gate passed; `payroll-contact` is the one failed query. BM25 contributed
+11 query hits and vector contributed 0. HashEmbedding is non-semantic vector
+plumbing, so this is not a hybrid semantic-retrieval claim. The gate makes no
+FastGPT, LLM, or LLM-judge call and is a curated source-chunk regression, not a
+general PDF/OCR accuracy or production-SLA claim.
 
 ## Risks and Mitigations
 
@@ -330,14 +347,14 @@ document-governance milestone.
 
 ## Resume, Interview, and Demo Outcome
 
-When all stages are complete, the defensible resume bullet is:
+The delivered, defensible resume bullet is:
 
-> Designed and implemented a governed HR document-ingestion pipeline with
-> parser routing, OCR and table-aware extraction, page-level lineage,
-> tokenizer-aware structural chunking, versioned indexing, quality gates, and
-> corpus-based RAG evaluation while preserving multi-tenant access controls.
+> Designed a governed HR knowledge pipeline with OCR/structured chunking,
+> versioned publication, and a two-layer parser/retrieval regression gate that
+> records Recall@3, MRR, source provenance, and tenant/audience boundaries.
 
-The demo will upload clean, scanned, and table-heavy HR documents; show parser
-routing and quality status; retrieve a policy answer with page-aware evidence;
-reject or hold a low-quality document for review; and prove that a failed
-reindex leaves the last approved version available.
+The demo first runs the M2-5 gate and inspects its summary, retriever
+contributions, and failed query ID; it then uploads clean, scanned, and
+table-heavy HR documents, shows parser routing and quality status, retrieves a
+policy answer with page-aware evidence, holds low-quality input for review, and
+proves that a failed reindex leaves the last approved version available.

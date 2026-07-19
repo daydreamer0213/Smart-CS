@@ -55,6 +55,10 @@ D:\2026.07.09\smartcs-cache\torch
 - 新电脑环境恢复，依赖和缓存路径整理到 D 盘。
 - JWT 登录、多租户身份边界、owner/admin/agent/employee 角色。
 - 企业知识库 RAG：FAQ 与文档分块统一检索，文档导入、分块、ChromaDB、BM25、后台治理。
+- M2 文档智能与知识治理已交付：M2-2 parser gate 历史成功报告为 9 fixtures、8 parsed、1 encrypted blocked、18/18 parsed facts、18/18 chunk facts 和 provenance 通过；CPU Docling/OCR 在当前内存压力下可波动。
+- M2-3/M2-4 已交付质量门禁、内容寻址原件留存、审批发布、版本/有效期、当前索引代次和失败安全 reindex。
+- M2-5 retrieval gate 已交付：8 indexed fixtures、11 curated facts-only chunks、12 golden queries、`top_k=3`；Recall@3 `11/12 = 91.67%`、MRR `91.67%`、已召回来源 provenance `100%`、gate passed，失败项为 `payroll-contact`。
+- M2-5 贡献统计为 BM25 11、vector 0；HashEmbedding 非语义，只验证向量通路，不能表述为混合语义检索质量。评测不调用 FastGPT、LLM 或 LLM judge，且不等于通用 PDF/OCR 准确率或生产 SLA。
 - 统一员工 Agent 入口：`/api/v1/{tenant_slug}/assistant/*`。
 - 角色化 Skills：
   - `employee`：企业知识检索。
@@ -72,6 +76,8 @@ D:\2026.07.09\smartcs-cache\torch
 - `docs/interview/SMARTCS_FINAL_PITCH.md`
 - `docs/interview/SMARTCS_INTERVIEW.md`
 - `docs/interview/SMARTCS_DEMO_SCRIPT.md`
+- `docs/operations/rag-evaluation-m2-5.md`
+- `scripts/evaluate_rag_retrieval.py`
 - `scripts/demo_enterprise_flow.py`
 - `app/api/auth.py`
 - `app/api/assistant.py`
@@ -97,6 +103,8 @@ D:\2026.07.09\conda-envs\smart-cs\python.exe -m pytest tests/ -v
 D:\2026.07.09\conda-envs\smart-cs\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 D:\2026.07.09\conda-envs\smart-cs\python.exe scripts\demo_enterprise_flow.py
+
+D:\2026.07.09\conda-envs\smart-cs\python.exe scripts\evaluate_rag_retrieval.py --fixture-dir tests\fixtures\documents --work-dir D:\DevData\smartcs\rag-eval\m2-5 --output D:\DevData\smartcs\benchmarks\m2-5-rag-evaluation.json --environment-label local-windows-cpu
 ```
 
 离线演示建议使用临时数据库和临时 Chroma 目录：
@@ -114,19 +122,19 @@ $env:LOG_DIR="$demoRoot/logs"
 
 一句话：
 
-> SmartCS 是一个多租户企业员工 Agent 后端，员工登录后按角色获得企业知识和 CRM Skills，AI 可以准备业务操作，但写入必须显式确认、重新校验并留下审计。
+> SmartCS 是一个多租户企业员工 Agent 后端，员工登录后按角色获得企业知识；制度文档经过解析、质量门禁、审批发布与来源溯源后才可检索，例外操作必须显式确认、重新校验并留下审计。
 
 不要夸大：
 
 - 不是已经商业上线的 SaaS。
-- 离线 hash embedding 只是演示稳定性方案，不代表生产向量质量。
+- 离线 HashEmbedding 只是演示和向量通路方案，不代表生产语义向量质量；M2-5 当前 11/12 命中均由 BM25 贡献。
 - 本地 CRM 是 fictional demo data，不是通用 CRM 集成平台。
 - UI 不是主卖点，主卖点是 Python AI 后端、RAG、Agent、权限边界、受控写操作和测试。
 
 ## 下一步建议
 
-阶段性开发已收口。下一步只做投递和展示准备：
+M2 已收口。继续开发时，按顺序进入 M3 真实 HR 工具接入，再进入 M4 生产化加固；不要回退为 CRM 扩功能或重新包装 FAQ。
 
-1. 按 `docs/interview/SMARTCS_FINAL_PITCH.md` 选择目标岗位版本的简历 bullet。
-2. 按 `docs/interview/SMARTCS_DEMO_SCRIPT.md` 练 3 分钟演示。
-3. 如需上传 GitHub，先确认是否公开展示；公开前检查 `.env`、数据库、日志和缓存不要入库。
+1. M3 只选一个可调用的 HR/OA 平台或沙箱，完成余额查询、本人工单、确认后请假草稿、组织/HR 联系人查询；不自研 HRIS。
+2. M4 再处理异步导入、失败重试、审计与可观测、通知/SLA、SSO/OIDC、CI/CD 与生产密钥治理。
+3. 投递演示先运行 `docs/operations/rag-evaluation-m2-5.md` 的命令，再按 `docs/interview/SMARTCS_DEMO_SCRIPT.md` 展示带来源的制度问答；公开 GitHub 前检查 `.env`、数据库、日志和缓存不要入库。

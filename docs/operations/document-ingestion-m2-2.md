@@ -114,10 +114,15 @@ OCR-only allowance while appearing authoritative.
 - CPU OCR latency and recognition can vary by hardware, Tesseract build, thread
   scheduling, and sparse-page orientation detection. Re-run the local gate
   after dependency or hardware changes.
-- M2-2 has no document version or reindex lifecycle. Those remain later M2-3
-  and M2-4 work.
-- Chroma and BM25 are separate external indexes. Cleanup is best effort after a
-  partial indexing failure; cleanup failure can leave an orphan that is not
-  retrievable through trusted SQL rows. M2-4 must add retry and reconciliation.
+- This was the M2-2 boundary at delivery time. M2-3 and M2-4 are now delivered:
+  low-quality documents enter review, originals are retained by content hash,
+  approved snapshots switch the current version atomically, and failed reindex
+  generations keep the last published version searchable.
+- Chroma and BM25 are separate external indexes. M2-4 makes the publication
+  switch failure-safe and retains the last good generation; external cleanup is
+  still best effort, so orphan reconciliation and durable retry remain M4 work.
+- M2-5 is a separate curated retrieval gate: only approved current generations
+  enter the real retrieval boundary. It measures source-chunk Recall@3 and
+  recalled-source provenance; see [M2-5 RAG evaluation](rag-evaluation-m2-5.md).
 - No production-readiness claim is made before Milestone 4 reliability,
   observability, deployment, and recovery work is complete.

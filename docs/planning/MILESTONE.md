@@ -1,4 +1,28 @@
-# Milestone 1: 企业 HR Service Agent 基座
+# SmartCS Milestone Status
+
+**Current status:** Milestone 2 delivered on 2026-07-19
+
+Milestone 1 已完成企业 HR Service Agent 基座；Milestone 2 已完成文档智能、知识治理与可量化检索评测。M3 真实 HR 工具接入和 M4 生产化加固仍为 pending，不在本次范围内。
+
+## Milestone 2: 文档智能与知识治理
+
+**Status:** delivered
+**Completed:** 2026-07-19
+
+### Definition of Done
+
+- [x] M2-2 parser gate：9 个 fixture、8 个解析成功、1 个加密 PDF 阻止索引；18/18 parsed facts、18/18 chunk facts 与 provenance 通过。
+- [x] M2-3 质量门禁：低质量文档进入人工复核，不静默发布。
+- [x] M2-4 治理生命周期：原件留存、审批发布、当前版本、有效期、失败安全 reindex 与来源血缘。
+- [x] M2-5 retrieval gate：8 个已索引 fixture、11 个 curated facts-only chunks、12 条 golden queries、`top_k=3`；Recall@3 `11/12 = 91.67%`、MRR `91.67%`、已召回来源 provenance `100%`，门禁通过。
+- [x] 多租户与受众角色过滤继续经过真实 SQL 检索边界验证；加密 fixture 未进入索引。
+- [x] 运行数据和报告位于 `D:\DevData\smartcs`，不写入 `C:`。
+
+**口径与限制：** M2-2 证明固定合成语料的解析与分块验收；CPU Docling/OCR 在当前内存压力下可波动。M2-5 是 curated source-chunk 的确定性检索回归，不是通用 PDF/OCR 准确率或生产 SLA。HashEmbedding 非语义；本次 BM25 贡献 11、vector 贡献 0，因此不声称混合语义检索质量。唯一失败 query 为 `payroll-contact`。
+
+**可复现命令和报告字段：** [M2-5 RAG 评测运行手册](../operations/rag-evaluation-m2-5.md)。
+
+## Milestone 1: 企业 HR Service Agent 基座
 
 **Status:** done
 **Completed:** 2026-07-18
@@ -19,8 +43,8 @@
 
 ## Scope Boundary
 
-本里程碑不包含高级文档解析与知识治理、真实 HRIS/OA 工具适配、SSO/SCIM、通知 SLA、生产级 tracing/metrics、CI/CD 和生产密钥治理；这些分别由后续 Milestone 2-4 承担。
+本里程碑不包含真实 HRIS/OA 工具适配、SSO/SCIM、通知 SLA、生产级 tracing/metrics、CI/CD 和生产密钥治理；M2 文档智能与知识治理已由后续 Milestone 2 交付。
 
 ## Next Milestone
 
-Milestone 2 聚焦文档智能与知识治理，先补足复杂 PDF/OCR、结构元数据、版本有效期、质量门禁和可量化 RAG 评测。Milestone 3 再接入一个真实 HR/OA 工具平台，Milestone 4 完成异步处理、可靠性、可观测、通知 SLA 和企业身份等生产化加固。WebSocket 和 Milvus 仅在实际规模需求出现后评估，不作为当前项目的伪需求。
+Milestone 3 接入一个真实 HR/OA 工具平台，Milestone 4 完成异步处理、可靠性、可观测、通知 SLA 和企业身份等生产化加固。WebSocket 和 Milvus 仅在实际规模需求出现后评估，不作为当前项目的伪需求。

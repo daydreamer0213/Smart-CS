@@ -75,6 +75,23 @@ cd D:\2026.07.09\AAA\smart-cs
 & D:\2026.07.09\conda-envs\smart-cs\python.exe -m pytest tests -q
 ```
 
+## M2-5 RAG 检索评测
+
+M2-2 与 M2-5 是分层门禁：前者验证解析、OCR、结构化分块和来源元数据；后者验证一组固定 HR 问题能否穿过真实的治理 SQL、BM25、Chroma 和 RRF 检索边界。复现 M2-5：
+
+```powershell
+cd D:\2026.07.09\AAA\smart-cs
+& D:\2026.07.09\conda-envs\smart-cs\python.exe scripts\evaluate_rag_retrieval.py `
+  --fixture-dir tests\fixtures\documents `
+  --work-dir D:\DevData\smartcs\rag-eval\m2-5 `
+  --output D:\DevData\smartcs\benchmarks\m2-5-rag-evaluation.json `
+  --environment-label local-windows-cpu
+```
+
+本次已记录结果：8 个已索引 fixture、11 个仅由受信 facts 组成的 curated source chunks、12 条 golden queries、`top_k=3`；Recall@3 为 `11/12 = 91.67%`，MRR 为 `91.67%`，已召回来源的 provenance accuracy 为 `100%`，门禁通过。失败项是 `payroll-contact`；BM25 贡献 11 条 query hit，vector 贡献 0 条。
+
+该评测不调用 FastGPT、LLM 或 LLM judge。离线 `HashEmbedding` 仅用于验证向量通路，属于非语义 embedding；因此这份报告不能声称混合语义检索质量。它是 curated source-chunk 的确定性回归门禁，也不等价于通用 PDF/OCR 准确率或生产 SLA。字段和排障说明见 [M2-5 RAG 评测运行手册](docs/operations/rag-evaluation-m2-5.md)。
+
 ## 实时演示
 
 完整的两终端演示、临时数据库位置、模型失败说明和排障方法见：[本地 HR Agent 演示手册](docs/operations/local-hr-agent-demo.md)。
@@ -87,6 +104,12 @@ cd D:\2026.07.09\AAA\smart-cs
 - [面试深聊要点](docs/interview/SMARTCS_INTERVIEW.md)
 - [求职交付包](docs/interview/SMARTCS_DELIVERY_PACKAGE.md)
 - [最终项目表达稿](docs/interview/SMARTCS_FINAL_PITCH.md)
+
+**简历 bullet：** 构建 HR 知识库 RAG 的分层质量门禁：解析层覆盖 OCR/结构化分块/来源元数据，检索层以 12 条 golden queries 验证 Recall@3、MRR、来源溯源及多租户受众边界，并保留失败 query 定位证据。
+
+**面试讲法：** 我没有把“有 Chroma 和 RRF”直接包装成检索效果，而是把解析质量和检索质量拆开验收。当前离线回归的 11/12 命中来自 BM25，HashEmbedding 只证明向量链路可运行；`payroll-contact` 未召回被保留为失败样本，后续引入真实语义 embedding 后再用同一门禁比较改进。
+
+**可演示路径：** 运行上面的评测命令，打开 JSON 的 `summary`、`retriever_contributions` 和 `failed_query_ids`；随后按 [3 分钟演示稿](docs/interview/SMARTCS_DEMO_SCRIPT.md) 查询已审批制度，并展示带页码的来源引用和转人工闭环。
 
 ## 范围边界
 

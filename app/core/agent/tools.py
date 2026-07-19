@@ -147,6 +147,11 @@ async def search_knowledge(query: str) -> str:
             chunk, document = chunk_entry
             if document.audience_roles and role not in document.audience_roles:
                 continue
+            provenance = {
+                field: getattr(chunk, field)
+                for field in ("page_start", "page_end", "section_path", "element_types")
+                if getattr(chunk, field) is not None
+            }
             results.append({
                 "id": chunk.id,
                 "source_type": "document",
@@ -156,6 +161,7 @@ async def search_knowledge(query: str) -> str:
                 "content": chunk.content,
                 "score": round(r["score"], 4),
                 "retrievers": r["sources"],
+                **provenance,
             })
             if len(results) == MAX_VISIBLE_RESULTS:
                 break

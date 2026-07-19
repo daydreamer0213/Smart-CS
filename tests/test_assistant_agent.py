@@ -3,8 +3,10 @@
 from langchain_core.messages import AIMessage
 
 from app.core.agent.business_agent import run_business_agent
+from app.core.agent.hr_agent import _normalize_sources
 from app.core.auth.security import hash_password
 from app.models.user import User
+from app.schemas.hr_support import SourceCitation
 
 
 class CaptureLogger:
@@ -16,6 +18,52 @@ class CaptureLogger:
 
     def warning(self, event, **fields):
         self.events.append(("warning", event, fields))
+
+
+def test_hr_source_normalization_keeps_optional_document_provenance():
+    sources = _normalize_sources({"results": [
+        {
+            "id": "document-chunk-1",
+            "source_type": "document",
+            "title": "leave-policy.pdf",
+            "content": "Annual leave policy.",
+            "score": 0.91,
+            "page_start": 4,
+            "page_end": 5,
+            "section_path": ["HR", "Leave"],
+            "element_types": ["paragraph", "table"],
+        },
+        {
+            "id": "legacy-knowledge-1",
+            "source_type": "knowledge",
+            "title": "Legacy FAQ",
+            "answer": "Legacy answer.",
+            "score": 0.8,
+        },
+    ]})
+
+    assert sources == [
+        {
+            "source_type": "document",
+            "source_id": "document-chunk-1",
+            "title": "leave-policy.pdf",
+            "excerpt": "Annual leave policy.",
+            "score": 0.91,
+            "page_start": 4,
+            "page_end": 5,
+            "section_path": ["HR", "Leave"],
+            "element_types": ["paragraph", "table"],
+        },
+        {
+            "source_type": "knowledge",
+            "source_id": "legacy-knowledge-1",
+            "title": "Legacy FAQ",
+            "excerpt": "Legacy answer.",
+            "score": 0.8,
+        },
+    ]
+    assert SourceCitation(**sources[0]).page_start == 4
+    assert SourceCitation(**sources[1]).model_dump(exclude_none=True) == sources[1]
 
 
 async def test_agent_logs_lifecycle_without_message_content(db, test_tenant, monkeypatch):

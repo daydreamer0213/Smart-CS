@@ -294,6 +294,75 @@ async def test_search_filters_document_chunks_by_audience_role(db, test_tenant, 
         db.rollback()
 
 
+async def test_search_provenance_requires_ready_tenant_role_authorized_sql_chunk(
+    db, test_tenant, monkeypatch,
+):
+    from app.core.agent.hr_agent import search_hr_knowledge, set_hr_runtime
+    from app.models.tenant import Tenant
+
+    employee = User(
+        tenant_id=test_tenant.id,
+        email="provenance-security-employee@example.com",
+        password_hash=hash_password("Password123"),
+        display_name="Provenance Security Employee",
+        role="employee",
+        is_active=True,
+    )
+    other_tenant = Tenant(
+        slug="provenance-other-tenant",
+        name="Provenance Other Tenant",
+        config_json={},
+        is_active=True,
+    )
+    db.add_all([employee, other_tenant])
+    db.flush()
+
+    documents = [
+        Document(tenant_id=test_tenant.id, filename="review.pdf", file_type="pdf", file_hash="review", status="review_required"),
+        Document(tenant_id=other_tenant.id, filename="other.pdf", file_type="pdf", file_hash="other", status="ready"),
+        Document(tenant_id=test_tenant.id, filename="admin.pdf", file_type="pdf", file_hash="admin", status="ready", audience_roles=["admin"]),
+        Document(tenant_id=test_tenant.id, filename="employee.pdf", file_type="pdf", file_hash="employee", status="ready", audience_roles=["employee"]),
+    ]
+    db.add_all(documents)
+    db.flush()
+    chunks = [
+        DocumentChunk(document_id=document.id, chunk_index=0, content=document.filename, status="active", page_start=index + 1)
+        for index, document in enumerate(documents)
+    ]
+    db.add_all(chunks)
+    db.flush()
+
+    class FakeEmbedding:
+        async def embed(self, _texts):
+            return [[0.0]]
+
+    class FakeVectorStore:
+        forged_metadata = {"page_start": 999, "section_path": ["forged"]}
+
+        def search(self, *_args):
+            return [(chunk.id, 0.1) for chunk in chunks]
+
+    class FakeBm25:
+        def search(self, *_args):
+            return [(chunk.id, 1.0) for chunk in chunks]
+
+    monkeypatch.setattr("app.core.agent.tools.get_embedding_provider", lambda: FakeEmbedding())
+    monkeypatch.setattr("app.core.agent.tools.get_vector_store", lambda: FakeVectorStore())
+    monkeypatch.setattr("app.core.agent.tools.get_bm25_manager", lambda: FakeBm25())
+
+    set_hr_runtime(db, test_tenant.id, test_tenant.slug, employee, "policy")
+    payload = json.loads(await search_hr_knowledge.ainvoke({"query": "policy"}))
+
+    assert payload["sources"] == [{
+        "source_type": "document",
+        "source_id": chunks[3].id,
+        "title": "employee.pdf",
+        "excerpt": "employee.pdf",
+        "score": 0.0312,
+        "page_start": 4,
+    }]
+
+
 async def test_search_keeps_authorized_document_after_restricted_candidates(
     db, test_tenant, monkeypatch
 ):

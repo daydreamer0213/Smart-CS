@@ -14,6 +14,10 @@ class SourceCitation(BaseModel):
     title: str = ""
     excerpt: str = ""
     score: float | None = None
+    page_start: int | None = None
+    page_end: int | None = None
+    section_path: list[str] | None = None
+    element_types: list[str] | None = None
 
 
 class HandoffDraftResponse(BaseModel):

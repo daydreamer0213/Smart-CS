@@ -84,6 +84,11 @@ def _normalize_sources(payload: dict) -> list[dict]:
             "title": str(result.get("title") or ""),
             "excerpt": _source_excerpt(result),
             "score": result.get("score"),
+            **{
+                field: result[field]
+                for field in ("page_start", "page_end", "section_path", "element_types")
+                if result.get(field) is not None
+            },
         })
     return sources
 

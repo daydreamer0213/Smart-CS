@@ -24,7 +24,7 @@ from app.core.retrieval_module import (
 )
 from app.models.document import Document, DocumentChunk, DocumentFamily
 from app.models.user import User
-from app.services.document_storage import delete_original, store_original
+from app.services.document_storage import delete_original, read_original, store_original
 
 logger = structlog.get_logger()
 
@@ -135,6 +135,19 @@ async def upload_document(
     db.flush()
     db.commit()
     db.refresh(doc)
+    return await _process_snapshot(db, tenant_slug, doc, filename, file_data)
+
+
+async def _process_snapshot(
+    db: Session,
+    tenant_slug: str,
+    doc: Document,
+    filename: str,
+    file_data: bytes,
+    *,
+    publish_current: bool = False,
+    previous_document: Document | None = None,
+) -> Document:
     document_id = doc.id
 
     parse_started = time.perf_counter()
@@ -264,6 +277,17 @@ async def upload_document(
             chunk.status = "active"
             chunk.embedding_id = chunk.id
         doc.status = "ready"
+        if publish_current:
+            if doc.family is None or previous_document is None:
+                raise DocumentLifecycleError("Reindex publication context is missing")
+            db.refresh(doc.family)
+            if doc.family.current_document_id != previous_document.id:
+                raise DocumentLifecycleError(
+                    "Current document changed during reindex"
+                )
+            doc.family.current_document_id = doc.id
+            for old_chunk in previous_document.chunks:
+                old_chunk.status = "inactive"
         db.commit()
         db.refresh(doc)
 
@@ -293,8 +317,114 @@ async def upload_document(
         db.commit()
         db.refresh(doc)
         logger.error("document_index_failed", filename=filename, error=str(error))
+        return doc
 
+    if publish_current and previous_document is not None:
+        for old_chunk in previous_document.chunks:
+            try:
+                vs.delete(tenant_slug, old_chunk.id)
+            except Exception:
+                logger.error("document_vector_cleanup_failed", chunk_id=old_chunk.id)
+            try:
+                bm.remove(tenant_slug, old_chunk.id)
+            except Exception:
+                logger.error("document_bm25_cleanup_failed", chunk_id=old_chunk.id)
     return doc
+
+
+async def reindex_document(
+    db: Session,
+    *,
+    tenant_id: str,
+    tenant_slug: str,
+    document_id: str,
+    actor_user_id: str | None,
+) -> Document:
+    source = get_document(db, tenant_id, document_id)
+    if source is None:
+        raise DocumentLifecycleError("Document not found")
+    if (
+        source.family is None
+        or source.family.tenant_id != tenant_id
+        or source.family.current_document_id != source.id
+    ):
+        raise DocumentLifecycleError("Only the current document can be reindexed")
+    if source.status != "ready" or source.review_status != "approved":
+        raise DocumentLifecycleError("Only an approved ready document can be reindexed")
+    if not source.storage_key:
+        raise DocumentLifecycleError("Original document is unavailable")
+    if actor_user_id:
+        actor = db.query(User).filter(
+            User.id == actor_user_id,
+            User.tenant_id == tenant_id,
+            User.role.in_(("owner", "admin")),
+            User.is_active.is_(True),
+        ).first()
+        if actor is None:
+            raise DocumentLifecycleError("Reindex actor is not authorized")
+
+    try:
+        file_data = read_original(source.storage_key)
+    except (OSError, ValueError) as error:
+        raise DocumentLifecycleError("Original document is unavailable") from error
+    if _hash_content(file_data) != source.file_hash:
+        raise DocumentLifecycleError("Original document integrity check failed")
+
+    generation = (
+        db.query(func.max(Document.index_generation))
+        .filter(
+            Document.family_id == source.family_id,
+            Document.version == source.version,
+        )
+        .scalar()
+        or 0
+    ) + 1
+    rebuilt = Document(
+        tenant_id=source.tenant_id,
+        family_id=source.family_id,
+        filename=source.filename,
+        file_type=source.file_type,
+        file_size=len(file_data),
+        file_hash=source.file_hash,
+        status="processing",
+        audience_roles=list(source.audience_roles or []),
+        version=source.version,
+        index_generation=generation,
+        review_status="approved",
+        effective_date=source.effective_date,
+        expiry_date=source.expiry_date,
+        source_type=source.source_type,
+        source_ref=source.source_ref,
+        storage_key=source.storage_key,
+        owner_user_id=source.owner_user_id,
+        reviewed_by_user_id=source.reviewed_by_user_id,
+        reviewed_at=source.reviewed_at,
+        chunker_version=CHUNKER_VERSION,
+        embedding_provider=settings.embedding_provider,
+        embedding_model=settings.embedding_model,
+    )
+    db.add(rebuilt)
+    db.commit()
+    db.refresh(rebuilt)
+    rebuilt = await _process_snapshot(
+        db,
+        tenant_slug,
+        rebuilt,
+        rebuilt.filename,
+        file_data,
+        publish_current=True,
+        previous_document=source,
+    )
+    logger.info(
+        "document_reindexed",
+        tenant_id=tenant_id,
+        actor_user_id=actor_user_id,
+        source_document_id=source.id,
+        document_id=rebuilt.id,
+        status=rebuilt.status,
+        index_generation=rebuilt.index_generation,
+    )
+    return rebuilt
 
 
 def list_documents(

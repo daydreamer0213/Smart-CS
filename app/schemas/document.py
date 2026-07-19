@@ -88,6 +88,17 @@ class DocumentReviewResponse(BaseModel):
     is_current: bool
 
 
+class DocumentReindexResponse(BaseModel):
+    document_id: str
+    source_document_id: str
+    family_id: str
+    version: int
+    index_generation: int
+    status: str
+    error_message: str | None = None
+    is_current: bool
+
+
 class DocumentChunkResponse(BaseModel):
     id: str
     chunk_index: int

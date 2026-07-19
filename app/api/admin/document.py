@@ -19,6 +19,7 @@ from app.models.user import User
 from app.schemas.document import (
     DocumentChunkResponse,
     DocumentListResponse,
+    DocumentReindexResponse,
     DocumentResponse,
     DocumentReviewRequest,
     DocumentReviewResponse,
@@ -145,6 +146,41 @@ async def review(
         review_status=document.review_status,
         reviewed_by_user_id=document.reviewed_by_user_id,
         reviewed_at=document.reviewed_at,
+        is_current=document.family.current_document_id == document.id,
+    )
+
+
+@router.post(
+    "/api/v1/admin/{tenant_slug}/documents/{document_id}/reindex",
+    response_model=DocumentReindexResponse,
+)
+async def reindex(
+    tenant_slug: str,
+    document_id: str,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(get_tenant),
+    _admin=Depends(admin_auth),
+):
+    try:
+        document = await document_service.reindex_document(
+            db,
+            tenant_id=tenant.id,
+            tenant_slug=tenant_slug,
+            document_id=document_id,
+            actor_user_id=_admin.id if isinstance(_admin, User) else None,
+        )
+    except document_service.DocumentLifecycleError as error:
+        status_code = 404 if str(error) == "Document not found" else 409
+        raise HTTPException(status_code, str(error)) from error
+
+    return DocumentReindexResponse(
+        document_id=document.id,
+        source_document_id=document_id,
+        family_id=document.family_id,
+        version=document.version,
+        index_generation=document.index_generation,
+        status=document.status,
+        error_message=document.error_message,
         is_current=document.family.current_document_id == document.id,
     )
 

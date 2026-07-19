@@ -366,6 +366,48 @@ async def test_document_review_rejects_unpublishable_snapshot(
     assert "ready" in response.text
 
 
+async def test_document_reindex_returns_new_generation_without_private_source(
+    admin_client, test_tenant, monkeypatch,
+):
+    captured = {}
+
+    async def fake_reindex(*_args, **kwargs):
+        captured.update(kwargs)
+        return _governed_document(
+            id="rebuilt-document",
+            family=SimpleNamespace(
+                name="Annual leave policy",
+                current_document_id="rebuilt-document",
+            ),
+            version=2,
+            index_generation=3,
+            status="ready",
+            error_message=None,
+        )
+
+    monkeypatch.setattr(document_service, "reindex_document", fake_reindex)
+
+    response = await admin_client.post(
+        f"/api/v1/admin/{test_tenant.slug}/documents/source-document/reindex"
+    )
+
+    assert response.status_code == 200
+    assert captured["tenant_id"] == test_tenant.id
+    assert captured["document_id"] == "source-document"
+    assert captured["actor_user_id"] is None
+    assert response.json() == {
+        "document_id": "rebuilt-document",
+        "source_document_id": "source-document",
+        "family_id": "family-1",
+        "version": 2,
+        "index_generation": 3,
+        "status": "ready",
+        "error_message": None,
+        "is_current": True,
+    }
+    assert "storage_key" not in response.text
+
+
 async def test_document_list_returns_audience_roles(admin_client, db, test_tenant):
     db.add(Document(
         tenant_id=test_tenant.id,

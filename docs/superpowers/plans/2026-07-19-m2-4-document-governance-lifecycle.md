@@ -346,4 +346,3 @@ git commit -m "docs: deliver M2-4 governance lifecycle"
 - [ ] **Step 8: Request whole-branch review, fix Critical/Important findings, re-run full verification, fast-forward main, and push**
 
 Expected final evidence: migration succeeds on a fresh D-drive SQLite database; all tests pass; a failed reindex leaves the previous approved source searchable; no secrets or absolute storage paths are tracked.
-

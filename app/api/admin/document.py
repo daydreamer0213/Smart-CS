@@ -61,6 +61,12 @@ async def upload(
         chunk_count=doc.chunk_count,
         status=doc.status,
         audience_roles=doc.audience_roles or [],
+        parser_name=getattr(doc, "parser_name", None),
+        parser_version=getattr(doc, "parser_version", None),
+        page_count=getattr(doc, "page_count", None),
+        parse_quality_status=getattr(doc, "parse_quality_status", None),
+        parse_quality_details=getattr(doc, "parse_quality_details", None),
+        error_message=getattr(doc, "error_message", None),
     )
 
 
@@ -82,6 +88,11 @@ async def list_docs(
             chunk_count=d.chunk_count, status=d.status,
             error_message=d.error_message,
             audience_roles=d.audience_roles or [],
+            parser_name=d.parser_name,
+            parser_version=d.parser_version,
+            page_count=d.page_count,
+            parse_quality_status=d.parse_quality_status,
+            parse_quality_details=d.parse_quality_details,
             created_at=d.created_at.isoformat() if d.created_at else "",
             updated_at=d.updated_at.isoformat() if d.updated_at else "",
         ))
@@ -107,6 +118,9 @@ async def list_chunks(
             DocumentChunkResponse(
                 id=c.id, chunk_index=c.chunk_index, content=c.content,
                 token_count=c.token_count, keywords=c.keywords, status=c.status,
+                page_start=c.page_start, page_end=c.page_end,
+                section_path=c.section_path, element_types=c.element_types,
+                source_element_indexes=c.source_element_indexes,
                 created_at=c.created_at.isoformat() if c.created_at else "",
                 updated_at=c.updated_at.isoformat() if c.updated_at else "",
             ) for c in chunks

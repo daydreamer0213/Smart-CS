@@ -14,6 +14,11 @@ class DocumentResponse(BaseModel):
     status: str
     error_message: str | None
     audience_roles: list[str]
+    parser_name: str | None = None
+    parser_version: str | None = None
+    page_count: int | None = None
+    parse_quality_status: str | None = None
+    parse_quality_details: dict[str, object] | None = None
     created_at: str
     updated_at: str
 
@@ -35,6 +40,11 @@ class DocumentChunkResponse(BaseModel):
     token_count: int
     keywords: str | None
     status: str
+    page_start: int | None = None
+    page_end: int | None = None
+    section_path: list[str] | None = None
+    element_types: list[str] | None = None
+    source_element_indexes: list[int] | None = None
     created_at: str
     updated_at: str
 
@@ -47,3 +57,9 @@ class DocumentUploadResponse(BaseModel):
     chunk_count: int
     status: str
     audience_roles: list[str]
+    parser_name: str | None = None
+    parser_version: str | None = None
+    page_count: int | None = None
+    parse_quality_status: str | None = None
+    parse_quality_details: dict[str, object] | None = None
+    error_message: str | None = None

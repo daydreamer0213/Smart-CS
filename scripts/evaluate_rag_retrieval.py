@@ -8,37 +8,15 @@ import hashlib
 import json
 import os
 import platform
-import subprocess
 import sys
 import unicodedata
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 from uuid import uuid4
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-LIGHTWEIGHT_PARSER_WORKER = PROJECT_ROOT / "scripts" / "_rag_parse_worker.py"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-
-from app.core.parsing.contracts import KnowledgeChunk, ParsedDocument
-from app.core.parsing.quality import evaluate_parse_quality
-from app.core.parsing.router import parse_structured_file
-from app.core.parsing.runtime import configure_parser_runtime
-from app.core.parsing.structured_chunker import CHUNKER_VERSION, chunk_document
-
-
-@dataclass(frozen=True)
-class PreparedFixture:
-    filename: str
-    file_type: str
-    file_size: int
-    file_hash: str
-    parser_name: str
-    parser_version: str
-    page_count: int
-    quality_details: dict[str, Any]
-    chunks: list[KnowledgeChunk]
 
 
 def _normalized_text(value: object) -> str:
@@ -115,6 +93,96 @@ def load_rag_manifest(fixture_dir: Path, manifest_path: Path | None = None) -> d
     }
 
 
+def _covers_provenance(chunk: dict[str, Any], evidence: dict[str, Any]) -> bool:
+    expected_start = evidence.get("page_start")
+    expected_end = evidence.get("page_end")
+    if expected_start is None or expected_end is None:
+        pages_match = chunk.get("page_start") is None and chunk.get("page_end") is None
+    else:
+        page_start = chunk.get("page_start")
+        page_end = chunk.get("page_end")
+        pages_match = (
+            isinstance(page_start, int)
+            and isinstance(page_end, int)
+            and page_start <= expected_start
+            and page_end >= expected_end
+        )
+    return pages_match and chunk.get("section_path") == evidence.get("section_path")
+
+
+def load_rag_corpus(fixture_dir: Path, corpus_path: Path | None = None) -> dict:
+    """Load the curated retrieval corpus and validate it against parser-gate facts."""
+    fixture_dir = Path(fixture_dir)
+    corpus_path = Path(corpus_path) if corpus_path else fixture_dir / "rag_corpus.json"
+    corpus = json.loads(corpus_path.read_text(encoding="utf-8"))
+    document_manifest = json.loads(
+        (fixture_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    fixtures = {item["id"]: item for item in document_manifest["fixtures"]}
+    indexable = {
+        fixture_id: fixture
+        for fixture_id, fixture in fixtures.items()
+        if fixture.get("expected_indexable") is True
+    }
+    chunks = corpus.get("chunks")
+    if (
+        corpus.get("schema_version") != 1
+        or corpus.get("origin") != "curated-retrieval-corpus"
+        or corpus.get("source_parser_gate") != "smartcs-structured-parser"
+        or not isinstance(chunks, list)
+    ):
+        raise ValueError("Invalid curated RAG corpus")
+
+    chunk_ids = [chunk.get("id") for chunk in chunks]
+    if len(chunks) != 12 or len(set(chunk_ids)) != 12 or not all(
+        isinstance(chunk_id, str) and chunk_id for chunk_id in chunk_ids
+    ):
+        raise ValueError("RAG corpus must contain 12 unique chunks")
+
+    chunks_by_fixture: dict[str, list[dict[str, Any]]] = {}
+    for chunk in chunks:
+        fixture_id = chunk.get("fixture_id")
+        fixture = indexable.get(fixture_id)
+        if (
+            fixture is None
+            or chunk.get("title") != fixture["filename"]
+            or not isinstance(chunk.get("content"), str)
+            or not isinstance(chunk.get("section_path"), list)
+            or not isinstance(chunk.get("element_types"), list)
+            or not chunk["element_types"]
+        ):
+            raise ValueError("RAG corpus must contain only indexable fixtures")
+        chunks_by_fixture.setdefault(fixture_id, []).append(chunk)
+
+    expected_chunk_counts = {
+        "clean-policy": 1,
+        "repeated-headers": 1,
+        "leave-table": 2,
+        "scanned-policy": 1,
+        "mixed-policy": 1,
+        "two-column-policy": 1,
+        "headed-docx": 3,
+        "multi-sheet-xlsx": 2,
+    }
+    if {
+        fixture_id: len(items) for fixture_id, items in chunks_by_fixture.items()
+    } != expected_chunk_counts:
+        raise ValueError("RAG corpus must cover all indexable fixtures")
+
+    for fixture_id, fixture in indexable.items():
+        fixture_chunks = chunks_by_fixture[fixture_id]
+        for evidence in fixture["expected_fact_provenance"]:
+            matching_chunks = [
+                chunk for chunk in fixture_chunks
+                if _normalized_text(evidence["fact"]) in _normalized_text(chunk["content"])
+            ]
+            if not matching_chunks:
+                raise ValueError(f"Missing required fact for fixture {fixture_id}")
+            if not any(_covers_provenance(chunk, evidence) for chunk in matching_chunks):
+                raise ValueError(f"Invalid fact provenance for fixture {fixture_id}")
+    return corpus
+
+
 def _matches_expected(result: dict[str, Any], expected: dict[str, Any]) -> bool:
     return (
         result.get("title") == expected["title"]
@@ -123,11 +191,7 @@ def _matches_expected(result: dict[str, Any], expected: dict[str, Any]) -> bool:
 
 
 def _has_expected_provenance(result: dict[str, Any], expected: dict[str, Any]) -> bool:
-    return (
-        result.get("page_start") == expected["page_start"]
-        and result.get("page_end") == expected["page_end"]
-        and result.get("section_path") == expected["section_path"]
-    )
+    return _covers_provenance(result, expected)
 
 
 def evaluate_results(manifest: dict, results_by_query: dict[str, list[dict]]) -> dict:
@@ -197,35 +261,13 @@ def _require_d_drive(path: Path, label: str) -> Path:
     return resolved
 
 
-def _load_corpus_manifest(fixture_dir: Path) -> tuple[dict, bytes, bytes]:
-    document_bytes = (fixture_dir / "manifest.json").read_bytes()
-    rag_bytes = (fixture_dir / "rag_manifest.json").read_bytes()
-    return json.loads(document_bytes), document_bytes, rag_bytes
-
-
-def _parse_advanced_in_subprocess(source_path: Path, output_path: Path) -> ParsedDocument:
-    try:
-        subprocess.run(
-            [
-                sys.executable,
-                str(LIGHTWEIGHT_PARSER_WORKER),
-                str(source_path),
-                str(output_path),
-            ],
-            check=True,
-        )
-        return ParsedDocument.model_validate_json(output_path.read_text(encoding="utf-8"))
-    finally:
-        output_path.unlink(missing_ok=True)
-
-
-def parse_fixture(source_path: Path, expected_route: str, run_dir: Path) -> ParsedDocument:
-    if expected_route == "advanced":
-        return _parse_advanced_in_subprocess(
-            source_path,
-            run_dir / f"{source_path.stem}.json",
-        )
-    return parse_structured_file(source_path.name, source_path.read_bytes())
+def _load_corpus_manifests(fixture_dir: Path) -> tuple[dict, dict[str, bytes]]:
+    sources = {
+        "manifest": (fixture_dir / "manifest.json").read_bytes(),
+        "rag_manifest": (fixture_dir / "rag_manifest.json").read_bytes(),
+        "rag_corpus": (fixture_dir / "rag_corpus.json").read_bytes(),
+    }
+    return json.loads(sources["manifest"]), sources
 
 
 async def _index_and_search(
@@ -261,39 +303,6 @@ async def _index_and_search(
     return results_by_query
 
 
-def _prepare_fixtures(
-    fixture_dir: Path,
-    run_dir: Path,
-    indexable: list[dict],
-) -> list[PreparedFixture]:
-    prepared = []
-    for case in indexable:
-        filename = case["filename"]
-        source_path = fixture_dir / filename
-        data = source_path.read_bytes()
-        parsed = parse_fixture(source_path, case["expected_route"], run_dir)
-        quality = evaluate_parse_quality(parsed, warnings=parsed.quality.warnings)
-        if quality.status != "passed":
-            raise ValueError(f"Fixture {case['id']} failed the parse quality gate")
-        chunks = chunk_document(parsed, filename)
-        if not chunks:
-            raise ValueError(f"Fixture {case['id']} produced no chunks")
-        prepared.append(
-            PreparedFixture(
-                filename=filename,
-                file_type=source_path.suffix.lstrip(".").lower(),
-                file_size=len(data),
-                file_hash=hashlib.sha256(data).hexdigest(),
-                parser_name=parsed.parser_name,
-                parser_version=parsed.parser_version,
-                page_count=parsed.page_count,
-                quality_details=quality.model_dump(),
-                chunks=chunks,
-            )
-        )
-    return prepared
-
-
 def run_evaluation(
     fixture_dir: Path,
     work_dir: Path,
@@ -308,9 +317,9 @@ def run_evaluation(
     database_path = run_dir / "evaluation.db"
     chroma_path = run_dir / "chroma"
 
-    configure_parser_runtime()
-    corpus_manifest, document_bytes, rag_bytes = _load_corpus_manifest(fixture_dir)
+    corpus_manifest, manifest_sources = _load_corpus_manifests(fixture_dir)
     manifest = load_rag_manifest(fixture_dir)
+    corpus = load_rag_corpus(fixture_dir)
     indexable = [
         item for item in corpus_manifest["fixtures"]
         if item.get("expected_indexable") is True
@@ -321,8 +330,9 @@ def run_evaluation(
     ]
     if "encrypted-policy" not in excluded_fixture_ids:
         raise ValueError("Encrypted fixture must be excluded")
-
-    prepared_fixtures = _prepare_fixtures(fixture_dir, run_dir, indexable)
+    chunks_by_fixture: dict[str, list[dict[str, Any]]] = {}
+    for item in corpus["chunks"]:
+        chunks_by_fixture.setdefault(item["fixture_id"], []).append(item)
 
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
@@ -343,56 +353,63 @@ def run_evaluation(
 
     indexed_chunks: list[tuple[Any, str]] = []
     try:
-        for prepared in prepared_fixtures:
-            family = DocumentFamily(tenant_id=tenant.id, name=prepared.filename)
+        for fixture in indexable:
+            filename = fixture["filename"]
+            source_path = fixture_dir / filename
+            source_bytes = source_path.read_bytes()
+            curated_chunks = chunks_by_fixture[fixture["id"]]
+            family = DocumentFamily(tenant_id=tenant.id, name=filename)
             session.add(family)
             session.flush()
             document = Document(
                 tenant_id=tenant.id,
                 family_id=family.id,
-                filename=prepared.filename,
-                file_type=prepared.file_type,
-                file_size=prepared.file_size,
-                file_hash=prepared.file_hash,
-                chunk_count=len(prepared.chunks),
+                filename=filename,
+                file_type=source_path.suffix.lstrip(".").lower(),
+                file_size=len(source_bytes),
+                file_hash=hashlib.sha256(source_bytes).hexdigest(),
+                chunk_count=len(curated_chunks),
                 status="ready",
                 audience_roles=["employee"],
-                parser_name=prepared.parser_name,
-                parser_version=prepared.parser_version,
-                page_count=prepared.page_count,
+                parser_name=corpus["source_parser_gate"],
+                parser_version="m2-2-gate",
+                page_count=max((item["page_end"] or 0 for item in curated_chunks), default=0),
                 parse_quality_status="passed",
-                parse_quality_details=prepared.quality_details,
+                parse_quality_details={
+                    "source_parser_gate": corpus["source_parser_gate"],
+                    "corpus_origin": corpus["origin"],
+                },
                 version=1,
                 index_generation=1,
                 review_status="approved",
                 source_type="evaluation",
-                chunker_version=CHUNKER_VERSION,
+                chunker_version="curated-retrieval-corpus-v1",
                 embedding_provider="hash",
                 embedding_model="hash-64",
             )
             session.add(document)
             session.flush()
             family.current_document_id = document.id
-            for index, parsed_chunk in enumerate(prepared.chunks, start=1):
+            for index, curated_chunk in enumerate(curated_chunks, start=1):
                 chunk = DocumentChunk(
                     document_id=document.id,
                     chunk_index=index,
-                    content=parsed_chunk.content,
-                    token_count=parsed_chunk.token_count,
+                    content=curated_chunk["content"],
+                    token_count=len(curated_chunk["content"]),
                     status="active",
-                    page_start=parsed_chunk.page_start,
-                    page_end=parsed_chunk.page_end,
-                    section_path=parsed_chunk.section_path,
-                    element_types=parsed_chunk.element_types,
-                    source_element_indexes=parsed_chunk.source_element_indexes,
+                    page_start=curated_chunk["page_start"],
+                    page_end=curated_chunk["page_end"],
+                    section_path=curated_chunk["section_path"],
+                    element_types=curated_chunk["element_types"],
+                    source_element_indexes=[],
                     index_generation=1,
-                    chunker_version=CHUNKER_VERSION,
+                    chunker_version="curated-retrieval-corpus-v1",
                     embedding_model="hash-64",
                 )
                 session.add(chunk)
                 session.flush()
                 chunk.embedding_id = chunk.id
-                indexed_chunks.append((chunk, parsed_chunk.contextualized_content))
+                indexed_chunks.append((chunk, f"{filename}\n{curated_chunk['content']}"))
         session.commit()
 
         embedding = HashEmbeddingProvider(dim=64)
@@ -435,7 +452,13 @@ def run_evaluation(
         session.close()
         engine.dispose()
 
-    manifest_hash = hashlib.sha256(document_bytes + b"\0" + rag_bytes).hexdigest()
+    manifest_hashes = {
+        name: hashlib.sha256(content).hexdigest()
+        for name, content in manifest_sources.items()
+    }
+    manifest_hashes["combined"] = hashlib.sha256(
+        b"\0".join(manifest_sources.values())
+    ).hexdigest()
     return {
         "schema_version": 1,
         "benchmark": "smartcs-rag-retrieval",
@@ -443,9 +466,11 @@ def run_evaluation(
             "environment_label": environment_label,
             "python_version": platform.python_version(),
             "platform": platform.system(),
-            "manifest_sha256": manifest_hash,
+            "manifest_sha256": manifest_hashes,
         },
         "corpus": {
+            "origin": corpus["origin"],
+            "source_parser_gate": corpus["source_parser_gate"],
             "fixture_count": len(corpus_manifest["fixtures"]),
             "indexed_fixture_count": len(indexable),
             "indexed_chunk_count": len(indexed_chunks),

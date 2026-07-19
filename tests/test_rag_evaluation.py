@@ -10,9 +10,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import scripts.evaluate_rag_retrieval as rag_evaluation
-from app.core.parsing.contracts import ParsedDocument, ParsedElement
 from app.models.document import Document, DocumentFamily
-from scripts.evaluate_rag_retrieval import evaluate_results, load_rag_manifest
+from scripts.evaluate_rag_retrieval import (
+    evaluate_results,
+    load_rag_manifest,
+)
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "documents"
@@ -24,61 +26,6 @@ def d_work_dir():
     path = Path("D:/DevData/smartcs/pytest-rag-eval") / uuid.uuid4().hex
     yield path
     shutil.rmtree(path, ignore_errors=True)
-
-
-@pytest.fixture
-def lightweight_parser(monkeypatch):
-    document_manifest = json.loads(
-        (FIXTURE_DIR / "manifest.json").read_text(encoding="utf-8")
-    )
-    fixtures = {item["filename"]: item for item in document_manifest["fixtures"]}
-    parsed_filenames = []
-
-    def parse(source_path, _expected_route, _run_dir):
-        filename = source_path.name
-        parsed_filenames.append(filename)
-        fixture = fixtures[filename]
-        elements = [
-            ParsedElement(
-                text=item["fact"],
-                element_type="paragraph",
-                page_start=item["page_start"],
-                page_end=item["page_end"],
-                section_path=item["section_path"],
-            )
-            for item in fixture["expected_fact_provenance"]
-        ]
-        if filename == "clean_policy.pdf":
-            elements[0].text += " SENSITIVE_CHUNK_BODY sk-secret-value C:\\private"
-        page_count = max(
-            (item.page_end or 0 for item in elements),
-            default=0,
-        )
-        covered_pages = {
-            page
-            for item in elements
-            if item.page_start is not None and item.page_end is not None
-            for page in range(item.page_start, item.page_end + 1)
-        }
-        elements.extend(
-            ParsedElement(
-                text=f"第 {page} 页测试内容。",
-                element_type="paragraph",
-                page_start=page,
-                page_end=page,
-            )
-            for page in range(1, page_count + 1)
-            if page not in covered_pages
-        )
-        return ParsedDocument(
-            parser_name="test-parser",
-            parser_version="1",
-            page_count=page_count,
-            elements=elements,
-        )
-
-    monkeypatch.setattr(rag_evaluation, "parse_fixture", parse)
-    return parsed_filenames
 
 
 def test_load_rag_manifest_defines_indexable_golden_queries():
@@ -93,6 +40,58 @@ def test_load_rag_manifest_defines_indexable_golden_queries():
     assert next(query for query in manifest["queries"] if query["id"] == "marriage-leave")[
         "question"
     ] == "婚假需要一次性休完吗？"
+
+
+def test_load_rag_corpus_validates_curated_fixture_and_fact_coverage():
+    corpus = rag_evaluation.load_rag_corpus(FIXTURE_DIR)
+
+    assert corpus["origin"] == "curated-retrieval-corpus"
+    assert corpus["source_parser_gate"] == "smartcs-structured-parser"
+    assert len(corpus["chunks"]) == 12
+    assert len({chunk["id"] for chunk in corpus["chunks"]}) == 12
+    assert {chunk["fixture_id"] for chunk in corpus["chunks"]} == {
+        "clean-policy",
+        "repeated-headers",
+        "leave-table",
+        "scanned-policy",
+        "mixed-policy",
+        "two-column-policy",
+        "headed-docx",
+        "multi-sheet-xlsx",
+    }
+
+
+def _write_rag_corpus(tmp_path: Path, mutate) -> Path:
+    corpus = json.loads((FIXTURE_DIR / "rag_corpus.json").read_text(encoding="utf-8"))
+    mutate(corpus)
+    path = tmp_path / "rag_corpus.json"
+    path.write_text(json.dumps(corpus, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda corpus: corpus["chunks"].pop(), "12 unique chunks"),
+        (
+            lambda corpus: corpus["chunks"][0].update(fixture_id="encrypted-policy"),
+            "indexable fixtures",
+        ),
+        (
+            lambda corpus: corpus["chunks"][0].update(content="fact removed"),
+            "required fact",
+        ),
+        (
+            lambda corpus: corpus["chunks"][0].update(page_end=1),
+            "fact provenance",
+        ),
+    ],
+)
+def test_load_rag_corpus_rejects_invalid_curated_corpus(tmp_path, mutate, message):
+    corpus_path = _write_rag_corpus(tmp_path, mutate)
+
+    with pytest.raises(ValueError, match=message):
+        rag_evaluation.load_rag_corpus(FIXTURE_DIR, corpus_path)
 
 
 def _write_rag_manifest(tmp_path: Path, mutate) -> Path:
@@ -221,6 +220,32 @@ def test_evaluate_results_fails_gate_when_one_recalled_result_has_wrong_provenan
     assert report["failed_query_ids"] == [failed_query["id"]]
 
 
+def test_evaluate_results_accepts_chunk_spanning_expected_fact_pages():
+    manifest = load_rag_manifest(FIXTURE_DIR)
+    query = next(
+        query for query in manifest["queries"] if query["id"] == "annual-leave-application"
+    )
+
+    report = evaluate_results(
+        {**manifest, "queries": [query]},
+        {
+            query["id"]: [
+                {
+                    "title": query["expected"]["title"],
+                    "content": query["expected"]["required_text"],
+                    "page_start": 1,
+                    "page_end": 3,
+                    "section_path": query["expected"]["section_path"],
+                    "retrievers": ["bm25"],
+                }
+            ]
+        },
+    )
+
+    assert report["summary"]["provenance_accuracy"] == 1.0
+    assert report["summary"]["gate"] == "passed"
+
+
 def test_evaluate_results_keeps_one_sanitized_row_per_query_without_hits():
     manifest = load_rag_manifest(FIXTURE_DIR)
 
@@ -238,7 +263,7 @@ def test_run_evaluation_rejects_non_d_work_dir_on_windows(tmp_path, monkeypatch)
         rag_evaluation.run_evaluation(FIXTURE_DIR, tmp_path, "test")
 
 
-def test_import_keeps_retrieval_stack_out_of_parse_process():
+def test_import_does_not_load_parser_or_retrieval_stack():
     command = [
         sys.executable,
         "-c",
@@ -249,7 +274,8 @@ def test_import_keeps_retrieval_stack_out_of_parse_process():
             "heavy_modules = sorted(name for name in sys.modules "
             "if name.split('.')[0] in heavy_roots "
             "or name.startswith('app.core.agent') "
-            "or name.startswith('app.core.retrieval')); "
+            "or name.startswith('app.core.retrieval') "
+            "or name.startswith('app.core.parsing')); "
             "print(json.dumps(heavy_modules))"
         ),
     ]
@@ -265,110 +291,8 @@ def test_import_keeps_retrieval_stack_out_of_parse_process():
     assert json.loads(completed.stdout) == []
 
 
-def test_parse_fixture_uses_lightweight_subprocess_for_advanced_route(tmp_path, monkeypatch):
-    parsed = ParsedDocument(
-        parser_name="worker-parser",
-        parser_version="1",
-        page_count=1,
-        elements=[ParsedElement(text="advanced", element_type="paragraph", page_start=1)],
-    )
-    observed = []
-    source = tmp_path / "advanced.pdf"
-    source.write_bytes(b"pdf")
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-
-    def run(command, *, check):
-        observed.append((command, check))
-        Path(command[-1]).write_text(parsed.model_dump_json(), encoding="utf-8")
-        return subprocess.CompletedProcess(command, 0)
-
-    monkeypatch.setattr(rag_evaluation.subprocess, "run", run)
-    monkeypatch.setattr(
-        rag_evaluation,
-        "parse_structured_file",
-        lambda *_args: pytest.fail("advanced parsing must not run in the parent process"),
-    )
-
-    actual = rag_evaluation.parse_fixture(source, "advanced", run_dir)
-
-    assert actual.model_dump() == parsed.model_dump()
-    assert observed == [(
-        [
-            sys.executable,
-            str(rag_evaluation.LIGHTWEIGHT_PARSER_WORKER),
-            str(source),
-            str(run_dir / "advanced.json"),
-        ],
-        True,
-    )]
-    assert not (run_dir / "advanced.json").exists()
-
-
-def test_parse_fixture_keeps_native_route_in_current_process(tmp_path, monkeypatch):
-    parsed = ParsedDocument(
-        parser_name="native-parser",
-        parser_version="1",
-        page_count=1,
-        elements=[ParsedElement(text="native", element_type="paragraph", page_start=1)],
-    )
-    observed = []
-    source = tmp_path / "native.pdf"
-    source.write_bytes(b"pdf")
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-
-    def parse(filename, data):
-        observed.append(("parent", filename, data))
-        return parsed
-
-    monkeypatch.setattr(rag_evaluation, "parse_structured_file", parse)
-    monkeypatch.setattr(
-        rag_evaluation,
-        "subprocess",
-        pytest.fail,
-    )
-
-    actual = rag_evaluation.parse_fixture(source, "native", run_dir)
-
-    assert actual is parsed
-    assert observed == [("parent", "native.pdf", b"pdf")]
-
-
-def test_parse_fixture_propagates_lightweight_subprocess_failure_and_cleans_output(tmp_path, monkeypatch):
-    source = tmp_path / "advanced.pdf"
-    source.write_bytes(b"pdf")
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-
-    def run(command, *, check):
-        Path(command[-1]).write_text("partial", encoding="utf-8")
-        raise subprocess.CalledProcessError(2, command)
-
-    monkeypatch.setattr(rag_evaluation.subprocess, "run", run)
-
-    with pytest.raises(subprocess.CalledProcessError):
-        rag_evaluation.parse_fixture(source, "advanced", run_dir)
-
-    assert not (run_dir / "advanced.json").exists()
-
-
-def test_run_evaluation_releases_sqlite_when_parsing_fails(d_work_dir, monkeypatch):
-    monkeypatch.setattr(
-        rag_evaluation,
-        "parse_fixture",
-        lambda *_args: (_ for _ in ()).throw(RuntimeError("parse failed")),
-    )
-
-    with pytest.raises(RuntimeError, match="parse failed"):
-        rag_evaluation.run_evaluation(FIXTURE_DIR, d_work_dir, "pytest")
-
-    shutil.rmtree(d_work_dir)
-    assert not d_work_dir.exists()
-
-
 def test_run_evaluation_uses_governed_documents_and_real_tool_boundary(
-    d_work_dir, lightweight_parser, monkeypatch,
+    d_work_dir, monkeypatch,
 ):
     from app.core.agent import tools as agent_tools
 
@@ -398,9 +322,17 @@ def test_run_evaluation_uses_governed_documents_and_real_tool_boundary(
 
     report = rag_evaluation.run_evaluation(FIXTURE_DIR, d_work_dir, "pytest")
 
-    assert "encrypted_policy.pdf" not in lightweight_parser
     assert report["corpus"]["excluded_fixture_ids"] == ["encrypted-policy"]
+    assert report["corpus"]["origin"] == "curated-retrieval-corpus"
+    assert report["corpus"]["source_parser_gate"] == "smartcs-structured-parser"
     assert report["corpus"]["indexed_fixture_count"] == 8
+    assert report["corpus"]["indexed_chunk_count"] == 12
+    assert set(report["run_context"]["manifest_sha256"]) == {
+        "manifest",
+        "rag_manifest",
+        "rag_corpus",
+        "combined",
+    }
     assert observed["governance_checked"] is True
     assert len(observed["queries"]) == report["query_count"] == 12
     assert report["retriever_profile"] == {
@@ -425,7 +357,7 @@ def test_run_evaluation_uses_governed_documents_and_real_tool_boundary(
         engine.dispose()
 
     serialized = json.dumps(report, ensure_ascii=False)
-    assert "SENSITIVE_CHUNK_BODY" not in serialized
+    assert "工龄满十年的员工每年享有十天年假。" not in serialized
     assert "sk-secret-value" not in serialized
     assert str(FIXTURE_DIR.resolve()) not in serialized
     assert str(d_work_dir.resolve()) not in serialized

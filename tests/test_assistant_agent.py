@@ -1,5 +1,7 @@
 """Observability tests for the role-scoped enterprise agent."""
 
+import json
+
 from langchain_core.messages import AIMessage
 
 from app.core.agent.business_agent import run_business_agent
@@ -38,7 +40,6 @@ def test_hr_source_normalization_keeps_optional_document_provenance():
             "source_type": "knowledge",
             "title": "Legacy FAQ",
             "answer": "Legacy answer.",
-            "score": 0.8,
         },
     ]})
 
@@ -59,11 +60,15 @@ def test_hr_source_normalization_keeps_optional_document_provenance():
             "source_id": "legacy-knowledge-1",
             "title": "Legacy FAQ",
             "excerpt": "Legacy answer.",
-            "score": 0.8,
+            "score": None,
         },
     ]
-    assert SourceCitation(**sources[0]).page_start == 4
-    assert SourceCitation(**sources[1]).model_dump(exclude_none=True) == sources[1]
+    document_citation = SourceCitation(**sources[0])
+    legacy_citation = SourceCitation(**sources[1])
+    assert document_citation.model_dump() == sources[0]
+    assert json.loads(document_citation.model_dump_json()) == sources[0]
+    assert legacy_citation.model_dump() == sources[1]
+    assert json.loads(legacy_citation.model_dump_json()) == sources[1]
 
 
 async def test_agent_logs_lifecycle_without_message_content(db, test_tenant, monkeypatch):

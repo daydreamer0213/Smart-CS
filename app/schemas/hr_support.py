@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, model_serializer, model_validator
 
 
 class SourceCitation(BaseModel):
@@ -18,6 +18,14 @@ class SourceCitation(BaseModel):
     page_end: int | None = None
     section_path: list[str] | None = None
     element_types: list[str] | None = None
+
+    @model_serializer(mode="wrap")
+    def omit_empty_provenance(self, serializer):
+        data = serializer(self)
+        for field in ("page_start", "page_end", "section_path", "element_types"):
+            if data.get(field) is None:
+                data.pop(field, None)
+        return data
 
 
 class HandoffDraftResponse(BaseModel):

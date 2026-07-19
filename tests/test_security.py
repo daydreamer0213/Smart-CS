@@ -337,8 +337,6 @@ async def test_search_provenance_requires_ready_tenant_role_authorized_sql_chunk
             return [[0.0]]
 
     class FakeVectorStore:
-        forged_metadata = {"page_start": 999, "section_path": ["forged"]}
-
         def search(self, *_args):
             return [(chunk.id, 0.1) for chunk in chunks]
 

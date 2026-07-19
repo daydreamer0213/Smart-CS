@@ -21,14 +21,12 @@ def _employee(db, tenant):
     return user
 
 
-def _stub_retrievers(monkeypatch, chunk_ids, metadata):
+def _stub_retrievers(monkeypatch, chunk_ids):
     class FakeEmbedding:
         async def embed(self, _texts):
             return [[0.0]]
 
     class FakeVectorStore:
-        forged_metadata = metadata
-
         def search(self, *_args):
             return [(chunk_id, 0.1) for chunk_id in chunk_ids]
 
@@ -41,7 +39,7 @@ def _stub_retrievers(monkeypatch, chunk_ids, metadata):
     monkeypatch.setattr("app.core.agent.tools.get_bm25_manager", lambda: FakeBm25())
 
 
-async def test_search_returns_sql_document_chunk_provenance_not_forged_vector_metadata(
+async def test_search_returns_sql_provenance_not_forged_fused_candidate_provenance(
     db, test_tenant, monkeypatch,
 ):
     from app.core.agent.tools import search_knowledge, set_runtime
@@ -68,10 +66,18 @@ async def test_search_returns_sql_document_chunk_provenance_not_forged_vector_me
     )
     db.add(chunk)
     db.flush()
-    _stub_retrievers(
-        monkeypatch,
-        [chunk.id],
-        {"page_start": 99, "page_end": 100, "section_path": ["forged"]},
+    _stub_retrievers(monkeypatch, [chunk.id])
+    monkeypatch.setattr(
+        "app.core.agent.tools.rrf_fusion",
+        lambda *_args, **_kwargs: [{
+            "doc_id": chunk.id,
+            "score": 0.0328,
+            "sources": ["bm25", "vector"],
+            "page_start": 99,
+            "page_end": 100,
+            "section_path": ["forged"],
+            "element_types": ["forged"],
+        }],
     )
 
     set_runtime(test_tenant.slug, db, user.role, test_tenant.id)
@@ -114,7 +120,7 @@ async def test_search_omits_provenance_for_legacy_document_chunk(db, test_tenant
     )
     db.add(chunk)
     db.flush()
-    _stub_retrievers(monkeypatch, [chunk.id], {"page_start": 88})
+    _stub_retrievers(monkeypatch, [chunk.id])
 
     set_runtime(test_tenant.slug, db, user.role, test_tenant.id)
     result = json.loads(await search_knowledge.ainvoke({"query": "legacy policy"}))["results"][0]

@@ -13,3 +13,4 @@ migrations/__pycache__/
 logs/
 .idea/
 .worktrees/
+.superpowers/

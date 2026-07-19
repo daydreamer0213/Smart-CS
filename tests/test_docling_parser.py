@@ -52,6 +52,29 @@ def _result(*, status="success", items=(), page_count=2, timeout=False):
     )
 
 
+def _native_filled_document(non_table_item, markdown, *, page_count=1):
+    from app.core.parsing.docling_parser import map_docling_result
+
+    return map_docling_result(
+        _result(
+            items=[
+                non_table_item,
+                _Item(
+                    "table",
+                    "",
+                    [1],
+                    markdown="",
+                    bboxes=[_BBox(70, 100, 430, 270)],
+                ),
+            ],
+            page_count=page_count,
+        ),
+        expected_page_count=page_count,
+        parser_version="2.113.0",
+        table_fallbacks=[(1, (72, 110, 430, 270), markdown)],
+    )
+
+
 def test_docling_result_maps_items_in_reading_order_with_safe_metadata():
     from app.core.parsing.docling_parser import map_docling_result
 
@@ -111,7 +134,12 @@ def test_docling_result_uses_controlled_native_markdown_for_an_empty_table():
 
     result = _result(
         items=[
-            _Item("section_header", "Leave table", [1]),
+            _Item(
+                "section_header",
+                "Leave table",
+                [1],
+                bboxes=[_BBox(70, 40, 180, 60)],
+            ),
             _Item(
                 "table",
                 "",
@@ -139,72 +167,71 @@ def test_docling_result_uses_controlled_native_markdown_for_an_empty_table():
     assert document.quality.status == "passed"
 
 
-def test_native_filled_table_marks_a_duplicate_ocr_data_row_for_review():
-    from app.core.parsing.docling_parser import map_docling_result
-
-    document = map_docling_result(
-        _result(
-            items=[
-                _Item("text", "20年以上 15天", [1]),
-                _Item(
-                    "table",
-                    "",
-                    [1],
-                    markdown="",
-                    bboxes=[_BBox(70, 100, 430, 270)],
-                ),
-            ],
-            page_count=1,
+@pytest.mark.parametrize(
+    "markdown",
+    [
+        "| 值 |\n| --- |\n| 单列内容 |",
+        "| 左 | 右 |\n| --- | --- |\n| 重复值 | 重复值 |",
+        "| 规则 | 天数 |\n| --- | --- |\n| A\\|B | 15 |",
+    ],
+    ids=["single-column", "repeated-values", "escaped-pipe"],
+)
+def test_native_filled_table_reviews_non_table_bbox_inside_table(markdown):
+    document = _native_filled_document(
+        _Item(
+            "text",
+            "unrelated OCR text",
+            [1],
+            bboxes=[_BBox(100, 130, 250, 160)],
         ),
-        expected_page_count=1,
-        parser_version="2.113.0",
-        table_fallbacks=[
-            (
-                1,
-                (72, 110, 430, 270),
-                "| 工龄 | 年假天数 |\n| --- | --- |\n| 20年以上 | 15天 |",
-            )
-        ],
+        markdown,
     )
 
-    normalized_text = "".join(document.plain_text.split())
-    assert normalized_text.count("20年以上") == 2
-    assert normalized_text.count("15天") == 2
+    assert document.elements[0].text == "unrelated OCR text"
     assert document.elements[1].metadata == {"ocr": False}
     assert document.quality.status == "review_required"
     assert document.quality.warnings == ["advanced_parser_incomplete"]
 
 
-def test_native_filled_table_ignores_header_repeated_in_non_table_content():
-    from app.core.parsing.docling_parser import map_docling_result
-
-    document = map_docling_result(
-        _result(
-            items=[
-                _Item("section_header", "工龄 年假天数", [1]),
-                _Item(
-                    "table",
-                    "",
-                    [1],
-                    markdown="",
-                    bboxes=[_BBox(70, 100, 430, 270)],
-                ),
-            ],
-            page_count=1,
+def test_native_filled_table_does_not_flag_non_overlapping_2021_title():
+    document = _native_filled_document(
+        _Item(
+            "section_header",
+            "2021",
+            [1],
+            bboxes=[_BBox(70, 40, 150, 60)],
         ),
-        expected_page_count=1,
-        parser_version="2.113.0",
-        table_fallbacks=[
-            (
-                1,
-                (72, 110, 430, 270),
-                "| 工龄 | 年假天数 |\n| --- | --- |\n| 20年以上 | 15天 |",
-            )
-        ],
+        "| 年份 | 天数 |\n| --- | --- |\n| 2021 | 15 |",
     )
 
     assert document.quality.status == "passed"
     assert document.quality.warnings == []
+
+
+def test_native_filled_table_does_not_compare_non_table_bbox_from_another_page():
+    document = _native_filled_document(
+        _Item(
+            "text",
+            "20年以上 15天",
+            [2],
+            bboxes=[_BBox(100, 130, 250, 160)],
+        ),
+        "| 工龄 | 天数 |\n| --- | --- |\n| 20年以上 | 15天 |",
+        page_count=2,
+    )
+
+    assert document.quality.status == "passed"
+    assert document.quality.warnings == []
+
+
+def test_native_filled_table_reviews_same_page_non_table_item_without_bbox():
+    document = _native_filled_document(
+        _Item("text", "unlocated OCR text", [1]),
+        "| 工龄 | 天数 |\n| --- | --- |\n| 20年以上 | 15天 |",
+    )
+
+    assert document.quality.status == "review_required"
+    assert document.quality.warnings == ["advanced_parser_incomplete"]
 
 
 def test_non_empty_docling_table_keeps_its_markdown_after_native_match_is_consumed():

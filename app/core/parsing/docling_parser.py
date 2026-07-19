@@ -10,8 +10,10 @@ from app.config import settings
 from app.core.parsing.contracts import ParsedDocument, ParsedElement
 from app.core.parsing.quality import evaluate_parse_quality, parser_failure_quality
 
-NativeTable = tuple[int, tuple[float, float, float, float], str]
+BBox = tuple[float, float, float, float]
+NativeTable = tuple[int, BBox, str]
 MIN_TABLE_BBOX_IOU = 0.7
+MIN_NON_TABLE_BBOX_COVERAGE = 0.8
 
 
 def parse_docling_pdf(
@@ -49,21 +51,28 @@ def map_docling_result(
     section_path: list[str] = []
     warnings = []
     remaining_table_fallbacks = list(table_fallbacks or ())
+    native_table_regions: list[tuple[int, BBox]] = []
+    non_table_regions: list[tuple[int, BBox | None]] = []
     for item, _ in result.document.iterate_items(with_groups=False):
         label = _label_value(item)
         text, table_markdown = _item_text(item, result.document, label)
         page_start, page_end = _page_span(item)
         metadata = {"ocr": True}
+        if label != "table":
+            non_table_regions.extend(_item_page_bboxes(item, result))
         if label == "table":
             fallback_index = _matching_native_table_index(
                 item, result, remaining_table_fallbacks
             )
             if fallback_index is not None:
-                _, _, native_markdown = remaining_table_fallbacks.pop(fallback_index)
+                native_page, native_bbox, native_markdown = remaining_table_fallbacks.pop(
+                    fallback_index
+                )
                 if not text:
                     text = native_markdown
                     table_markdown = native_markdown
                     metadata = {"ocr": False}
+                    native_table_regions.append((native_page, native_bbox))
             elif not text:
                 warnings.append("advanced_parser_incomplete")
         if not text:
@@ -86,7 +95,7 @@ def map_docling_result(
 
     if remaining_table_fallbacks:
         warnings.append("advanced_parser_incomplete")
-    if _has_repeated_native_table_data(elements):
+    if _has_native_table_content_overlap(native_table_regions, non_table_regions):
         warnings.append("advanced_parser_incomplete")
 
     document = ParsedDocument(
@@ -194,26 +203,35 @@ def _matching_native_table_index(
 
 
 def _item_top_left_bboxes(item, result):
-    bboxes = []
+    return [
+        (page_no, bbox)
+        for page_no, bbox in _item_page_bboxes(item, result)
+        if bbox is not None
+    ]
+
+
+def _item_page_bboxes(item, result) -> list[tuple[int, BBox | None]]:
+    bboxes: list[tuple[int, BBox | None]] = []
     pages = getattr(result, "pages", ())
     for provenance in getattr(item, "prov", ()):
         page_no = getattr(provenance, "page_no", None)
         bbox = getattr(provenance, "bbox", None)
-        if (
-            not isinstance(page_no, int)
-            or not 1 <= page_no <= len(pages)
-            or bbox is None
-        ):
+        if not isinstance(page_no, int) or page_no < 1:
             continue
-        try:
-            bbox = bbox.to_top_left_origin(page_height=pages[page_no - 1].size.height)
-            coordinates = tuple(
-                float(getattr(bbox, name)) for name in ("l", "t", "r", "b")
-            )
-        except (AttributeError, TypeError, ValueError):
-            continue
-        if coordinates[0] < coordinates[2] and coordinates[1] < coordinates[3]:
-            bboxes.append((page_no, coordinates))
+        coordinates = None
+        if bbox is not None and page_no <= len(pages):
+            try:
+                bbox = bbox.to_top_left_origin(
+                    page_height=pages[page_no - 1].size.height
+                )
+                candidate = tuple(
+                    float(getattr(bbox, name)) for name in ("l", "t", "r", "b")
+                )
+                if candidate[0] < candidate[2] and candidate[1] < candidate[3]:
+                    coordinates = candidate
+            except (AttributeError, TypeError, ValueError):
+                pass
+        bboxes.append((page_no, coordinates))
     return bboxes
 
 
@@ -232,80 +250,37 @@ def _bbox_overlap_ratio(first, second) -> float:
     return intersection / union
 
 
-def _has_repeated_native_table_data(elements: list[ParsedElement]) -> bool:
-    non_tables = [element for element in elements if element.element_type != "table"]
-    for table in elements:
-        if (
-            table.element_type != "table"
-            or table.metadata.get("ocr") is not False
-            or not table.table_markdown
-        ):
-            continue
-        page_text = "".join(
-            _normalize_table_cell(element.text)
-            for element in non_tables
-            if _page_spans_overlap(table, element)
-        )
-        if any(
-            all(cell in page_text for cell in row)
-            for row in _markdown_data_rows(table.table_markdown)
-        ):
-            return True
+def _has_native_table_content_overlap(
+    native_tables: list[tuple[int, BBox]],
+    non_tables: list[tuple[int, BBox | None]],
+) -> bool:
+    for table_page, table_bbox in native_tables:
+        for item_page, item_bbox in non_tables:
+            if item_page != table_page:
+                continue
+            if item_bbox is None:
+                return True
+            if (
+                _bbox_smaller_coverage(table_bbox, item_bbox)
+                >= MIN_NON_TABLE_BBOX_COVERAGE
+            ):
+                return True
     return False
 
 
-def _markdown_data_rows(markdown: str) -> list[list[str]]:
-    rows = [_markdown_row_cells(line) for line in markdown.splitlines()]
-    separator_index = next(
-        (
-            index
-            for index, row in enumerate(rows)
-            if row and all(_is_markdown_separator(cell) for cell in row)
-        ),
-        None,
+def _bbox_smaller_coverage(first: BBox, second: BBox) -> float:
+    first_width = first[2] - first[0]
+    first_height = first[3] - first[1]
+    second_width = second[2] - second[0]
+    second_height = second[3] - second[1]
+    if min(first_width, first_height, second_width, second_height) <= 0:
+        return 0.0
+
+    width = max(0.0, min(first[2], second[2]) - max(first[0], second[0]))
+    height = max(0.0, min(first[3], second[3]) - max(first[1], second[1]))
+    return width * height / min(
+        first_width * first_height, second_width * second_height
     )
-    if separator_index is None:
-        return []
-
-    data_rows = []
-    for row in rows[separator_index + 1 :]:
-        cells = list(
-            dict.fromkeys(
-                cell
-                for cell in map(_normalize_table_cell, row)
-                if any(character.isalnum() for character in cell)
-            )
-        )
-        if len(cells) >= 2:
-            data_rows.append(cells)
-    return data_rows
-
-
-def _markdown_row_cells(line: str) -> list[str]:
-    line = line.strip()
-    if not line.startswith("|") or not line.endswith("|"):
-        return []
-    return [cell.strip() for cell in line[1:-1].split("|")]
-
-
-def _is_markdown_separator(cell: str) -> bool:
-    cell = cell.strip()
-    return len(cell) >= 3 and "-" in cell and set(cell) <= {"-", ":"}
-
-
-def _normalize_table_cell(text: str) -> str:
-    return "".join(text.replace(r"\|", "|").split()).strip("`*_")
-
-
-def _page_spans_overlap(first: ParsedElement, second: ParsedElement) -> bool:
-    if (
-        first.page_start is None
-        or first.page_end is None
-        or second.page_start is None
-        or second.page_end is None
-    ):
-        return False
-    return first.page_start <= second.page_end and second.page_start <= first.page_end
 
 
 def _docling_version() -> str:

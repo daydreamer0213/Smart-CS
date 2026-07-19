@@ -18,15 +18,26 @@ def _split_text(text: str, max_tokens: int | None = None) -> list[str]:
     chunks: list[str] = []
     start = 0
     while start < len(text):
-        low, high = start + 1, len(text)
         end = start
-        while low <= high:
-            candidate = (low + high) // 2
+        window = 1
+        while True:
+            candidate = min(start + window, len(text))
             if _token_count(text[start:candidate]) <= max_tokens:
                 end = candidate
-                low = candidate + 1
-            else:
-                high = candidate - 1
+                if end == len(text):
+                    break
+                window *= 2
+                continue
+
+            low, high = end + 1, candidate - 1
+            while low <= high:
+                candidate = (low + high) // 2
+                if _token_count(text[start:candidate]) <= max_tokens:
+                    end = candidate
+                    low = candidate + 1
+                else:
+                    high = candidate - 1
+            break
         if end == start:
             raise ValueError("max_tokens is too small for one character")
         chunks.append(text[start:end])

@@ -118,7 +118,7 @@ def test_document_parser_allows_an_explicit_portable_data_root(monkeypatch):
 
 
 def test_parser_runtime_is_configured_from_settings_before_docling_validation(
-    monkeypatch,
+    monkeypatch, tmp_path,
 ):
     for name in ("TEMP", "TMP", "HF_HOME", "TORCH_HOME", "TESSDATA_PREFIX"):
         monkeypatch.delenv(name, raising=False)
@@ -127,7 +127,29 @@ def test_parser_runtime_is_configured_from_settings_before_docling_validation(
     from app.core.parsing import docling_parser
     from app.core.parsing.runtime import configure_parser_runtime
 
-    settings = Settings(_env_file=None)
+    root = (tmp_path / "parser-data").resolve()
+    artifacts = root / "docling" / "artifacts"
+    temp_dir = root / "tmp"
+    hf_home = root / "huggingface"
+    torch_home = root / "torch"
+    tesseract_cmd = root / "tesseract" / "tesseract.exe"
+    tessdata = root / "tesseract" / "tessdata"
+    for directory in (artifacts, temp_dir, hf_home, torch_home, tessdata):
+        directory.mkdir(parents=True, exist_ok=True)
+    tesseract_cmd.touch()
+    for language in ("chi_sim", "eng"):
+        (tessdata / f"{language}.traineddata").write_bytes(b"fixture")
+
+    settings = Settings(
+        _env_file=None,
+        parser_data_root=str(root),
+        parser_temp_dir=str(temp_dir),
+        docling_artifacts_path=str(artifacts),
+        hf_home=str(hf_home),
+        torch_home=str(torch_home),
+        tesseract_cmd=str(tesseract_cmd),
+        tessdata_prefix=str(tessdata),
+    )
     monkeypatch.setattr(docling_parser, "settings", settings)
     configure_parser_runtime(settings)
 
@@ -138,7 +160,6 @@ def test_parser_runtime_is_configured_from_settings_before_docling_validation(
         "TORCH_HOME": settings.torch_home,
         "TESSDATA_PREFIX": settings.tessdata_prefix,
     }
-    root = Path(settings.parser_data_root).resolve()
     assert tempfile.tempdir == settings.parser_temp_dir
     assert tempfile.gettempdir() == settings.parser_temp_dir
     assert {name: os.environ[name] for name in expected} == expected

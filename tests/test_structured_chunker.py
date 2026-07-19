@@ -237,3 +237,22 @@ def test_chunk_document_round_trips_an_oversized_chinese_table_row():
     assert all("\ufffd" not in chunk.content for chunk in chunks)
     assert all(chunk.token_count <= MAX_TOKENS for chunk in chunks)
     assert all(chunk.source_element_indexes == [0] for chunk in chunks)
+
+
+def test_split_text_tokenizes_only_near_linear_total_characters(monkeypatch):
+    from app.core.parsing import structured_chunker
+
+    text = "政策" * 5000
+    tokenized_lengths = []
+    token_count = structured_chunker._token_count
+
+    def counting_token_count(value):
+        tokenized_lengths.append(len(value))
+        return token_count(value)
+
+    monkeypatch.setattr(structured_chunker, "_token_count", counting_token_count)
+    chunks = structured_chunker._split_text(text, max_tokens=32)
+
+    assert "".join(chunks) == text
+    assert sum(tokenized_lengths) <= len(text) * 20
+    assert max(tokenized_lengths) <= max(map(len, chunks)) * 4

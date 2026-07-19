@@ -6,9 +6,9 @@ import argparse
 import asyncio
 import hashlib
 import json
-import multiprocessing
 import os
 import platform
+import subprocess
 import sys
 import unicodedata
 from pathlib import Path
@@ -16,6 +16,7 @@ from typing import Any, Sequence
 from uuid import uuid4
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+LIGHTWEIGHT_PARSER_WORKER = PROJECT_ROOT / "scripts" / "_rag_parse_worker.py"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -198,54 +199,29 @@ def _load_corpus_manifest(fixture_dir: Path) -> tuple[dict, bytes, bytes]:
     return json.loads(document_bytes), document_bytes, rag_bytes
 
 
-def _advanced_parser_worker(connection, filename: str, data: bytes) -> None:
+def _parse_advanced_in_subprocess(source_path: Path, output_path: Path) -> ParsedDocument:
     try:
-        configure_parser_runtime()
-        connection.send({"parsed": parse_structured_file(filename, data).model_dump(mode="json")})
-    except BaseException as error:
-        connection.send({"error_type": type(error).__name__, "error": str(error)})
-    finally:
-        connection.close()
-
-
-def _parse_advanced_in_spawn_worker(filename: str, data: bytes):
-    context = multiprocessing.get_context("spawn")
-    parent_connection, child_connection = context.Pipe(duplex=False)
-    process = context.Process(
-        target=_advanced_parser_worker,
-        args=(child_connection, filename, data),
-    )
-    process.start()
-    child_connection.close()
-    try:
-        try:
-            payload = parent_connection.recv()
-        except EOFError as error:
-            process.join()
-            raise RuntimeError(
-                f"Advanced parser worker exited without a result for {filename} "
-                f"(exit code {process.exitcode})"
-            ) from error
-    finally:
-        parent_connection.close()
-    process.join()
-    if process.exitcode:
-        raise RuntimeError(
-            f"Advanced parser worker failed for {filename} (exit code {process.exitcode})"
+        subprocess.run(
+            [
+                sys.executable,
+                str(LIGHTWEIGHT_PARSER_WORKER),
+                str(source_path),
+                str(output_path),
+            ],
+            check=True,
         )
-    if not isinstance(payload, dict) or "parsed" not in payload:
-        raise RuntimeError(
-            f"Advanced parser worker failed for {filename}: "
-            f"{payload.get('error_type', 'UnknownError') if isinstance(payload, dict) else 'InvalidResult'}: "
-            f"{payload.get('error', '') if isinstance(payload, dict) else ''}"
-        )
-    return ParsedDocument.model_validate(payload["parsed"])
+        return ParsedDocument.model_validate_json(output_path.read_text(encoding="utf-8"))
+    finally:
+        output_path.unlink(missing_ok=True)
 
 
-def parse_fixture(filename: str, data: bytes, expected_route: str):
+def parse_fixture(source_path: Path, expected_route: str, run_dir: Path) -> ParsedDocument:
     if expected_route == "advanced":
-        return _parse_advanced_in_spawn_worker(filename, data)
-    return parse_structured_file(filename, data)
+        return _parse_advanced_in_subprocess(
+            source_path,
+            run_dir / f"{source_path.stem}.json",
+        )
+    return parse_structured_file(source_path.name, source_path.read_bytes())
 
 
 async def _index_and_search(
@@ -318,8 +294,9 @@ def run_evaluation(
     try:
         for case in indexable:
             filename = case["filename"]
-            data = (fixture_dir / filename).read_bytes()
-            parsed = parse_fixture(filename, data, case["expected_route"])
+            source_path = fixture_dir / filename
+            data = source_path.read_bytes()
+            parsed = parse_fixture(source_path, case["expected_route"], run_dir)
             quality = evaluate_parse_quality(
                 parsed,
                 warnings=parsed.quality.warnings,

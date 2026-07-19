@@ -1,5 +1,7 @@
 import json
 import shutil
+import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -31,7 +33,8 @@ def lightweight_parser(monkeypatch):
     fixtures = {item["filename"]: item for item in document_manifest["fixtures"]}
     parsed_filenames = []
 
-    def parse(filename, _data, _expected_route):
+    def parse(source_path, _expected_route, _run_dir):
+        filename = source_path.name
         parsed_filenames.append(filename)
         fixture = fixtures[filename]
         elements = [
@@ -234,7 +237,7 @@ def test_run_evaluation_rejects_non_d_work_dir_on_windows(tmp_path, monkeypatch)
         rag_evaluation.run_evaluation(FIXTURE_DIR, tmp_path, "test")
 
 
-def test_parse_fixture_uses_spawn_worker_for_advanced_route(monkeypatch):
+def test_parse_fixture_uses_lightweight_subprocess_for_advanced_route(tmp_path, monkeypatch):
     parsed = ParsedDocument(
         parser_name="worker-parser",
         parser_version="1",
@@ -242,25 +245,39 @@ def test_parse_fixture_uses_spawn_worker_for_advanced_route(monkeypatch):
         elements=[ParsedElement(text="advanced", element_type="paragraph", page_start=1)],
     )
     observed = []
+    source = tmp_path / "advanced.pdf"
+    source.write_bytes(b"pdf")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
 
-    def spawn_worker(filename, data):
-        observed.append(("worker", filename, data))
-        return parsed
+    def run(command, *, check):
+        observed.append((command, check))
+        Path(command[-1]).write_text(parsed.model_dump_json(), encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0)
 
-    monkeypatch.setattr(rag_evaluation, "_parse_advanced_in_spawn_worker", spawn_worker)
+    monkeypatch.setattr(rag_evaluation.subprocess, "run", run)
     monkeypatch.setattr(
         rag_evaluation,
         "parse_structured_file",
         lambda *_args: pytest.fail("advanced parsing must not run in the parent process"),
     )
 
-    actual = rag_evaluation.parse_fixture("advanced.pdf", b"pdf", "advanced")
+    actual = rag_evaluation.parse_fixture(source, "advanced", run_dir)
 
-    assert actual is parsed
-    assert observed == [("worker", "advanced.pdf", b"pdf")]
+    assert actual.model_dump() == parsed.model_dump()
+    assert observed == [(
+        [
+            sys.executable,
+            str(rag_evaluation.LIGHTWEIGHT_PARSER_WORKER),
+            str(source),
+            str(run_dir / "advanced.json"),
+        ],
+        True,
+    )]
+    assert not (run_dir / "advanced.json").exists()
 
 
-def test_parse_fixture_keeps_native_route_in_current_process(monkeypatch):
+def test_parse_fixture_keeps_native_route_in_current_process(tmp_path, monkeypatch):
     parsed = ParsedDocument(
         parser_name="native-parser",
         parser_version="1",
@@ -268,6 +285,10 @@ def test_parse_fixture_keeps_native_route_in_current_process(monkeypatch):
         elements=[ParsedElement(text="native", element_type="paragraph", page_start=1)],
     )
     observed = []
+    source = tmp_path / "native.pdf"
+    source.write_bytes(b"pdf")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
 
     def parse(filename, data):
         observed.append(("parent", filename, data))
@@ -276,14 +297,32 @@ def test_parse_fixture_keeps_native_route_in_current_process(monkeypatch):
     monkeypatch.setattr(rag_evaluation, "parse_structured_file", parse)
     monkeypatch.setattr(
         rag_evaluation,
-        "_parse_advanced_in_spawn_worker",
-        lambda *_args: pytest.fail("native parsing must not spawn a worker"),
+        "subprocess",
+        pytest.fail,
     )
 
-    actual = rag_evaluation.parse_fixture("native.pdf", b"pdf", "native")
+    actual = rag_evaluation.parse_fixture(source, "native", run_dir)
 
     assert actual is parsed
     assert observed == [("parent", "native.pdf", b"pdf")]
+
+
+def test_parse_fixture_propagates_lightweight_subprocess_failure_and_cleans_output(tmp_path, monkeypatch):
+    source = tmp_path / "advanced.pdf"
+    source.write_bytes(b"pdf")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    def run(command, *, check):
+        Path(command[-1]).write_text("partial", encoding="utf-8")
+        raise subprocess.CalledProcessError(2, command)
+
+    monkeypatch.setattr(rag_evaluation.subprocess, "run", run)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        rag_evaluation.parse_fixture(source, "advanced", run_dir)
+
+    assert not (run_dir / "advanced.json").exists()
 
 
 def test_run_evaluation_releases_sqlite_when_parsing_fails(d_work_dir, monkeypatch):

@@ -7,7 +7,7 @@
       "id": "clean-policy-001",
       "fixture_id": "clean-policy",
       "title": "clean_policy.pdf",
-      "content": "年假制度适用于公司全体员工。工龄满十年的员工每年享有十天年假。",
+      "facts": ["工龄满十年的员工每年享有十天年假。"],
       "page_start": 1,
       "page_end": 2,
       "section_path": [],
@@ -17,7 +17,11 @@
       "id": "repeated-headers-001",
       "fixture_id": "repeated-headers",
       "title": "repeated_headers.pdf",
-      "content": "休假办理要求：年假申请应提前三个工作日提交。病假应提供医疗证明。婚假应一次性休完。",
+      "facts": [
+        "年假申请应提前三个工作日提交。",
+        "病假应提供医疗证明。",
+        "婚假应一次性休完。"
+      ],
       "page_start": 1,
       "page_end": 3,
       "section_path": [],
@@ -27,7 +31,7 @@
       "id": "leave-table-001",
       "fixture_id": "leave-table",
       "title": "leave_table.pdf",
-      "content": "年假天数对照表，表头为工龄和年假天数。",
+      "facts": ["工龄", "年假天数"],
       "page_start": 1,
       "page_end": 1,
       "section_path": ["年 假 天 数 对 照 表"],
@@ -37,7 +41,7 @@
       "id": "leave-table-002",
       "fixture_id": "leave-table",
       "title": "leave_table.pdf",
-      "content": "工龄20年以上，年假天数为15天。",
+      "facts": ["20年以上", "15天"],
       "page_start": 1,
       "page_end": 1,
       "section_path": ["年 假 天 数 对 照 表"],
@@ -47,7 +51,7 @@
       "id": "scanned-policy-001",
       "fixture_id": "scanned-policy",
       "title": "scanned_policy.pdf",
-      "content": "育儿假每年五天。",
+      "facts": ["育儿假每年五天。"],
       "page_start": 1,
       "page_end": 1,
       "section_path": [],
@@ -57,7 +61,10 @@
       "id": "mixed-policy-001",
       "fixture_id": "mixed-policy",
       "title": "mixed_policy.pdf",
-      "content": "驻外员工住宿由公司统一安排。驻外补贴标准为每月3000元。",
+      "facts": [
+        "驻外员工住宿由公司统一安排。",
+        "驻外补贴标准为每月3000元。"
+      ],
       "page_start": 1,
       "page_end": 2,
       "section_path": [],
@@ -67,7 +74,10 @@
       "id": "two-column-policy-001",
       "fixture_id": "two-column-policy",
       "title": "two_column_policy.pdf",
-      "content": "入离职管理：新员工应在首日完成身份核验。离职员工应在三天内归还设备。",
+      "facts": [
+        "新员工应在首日完成身份核验。",
+        "离职员工应在三天内归还设备。"
+      ],
       "page_start": 1,
       "page_end": 1,
       "section_path": [],
@@ -77,7 +87,7 @@
       "id": "headed-docx-001",
       "fixture_id": "headed-docx",
       "title": "headed_policy.docx",
-      "content": "员工证明开具制度",
+      "facts": ["员工证明开具制度"],
       "page_start": null,
       "page_end": null,
       "section_path": ["员工证明开具制度"],
@@ -87,41 +97,33 @@
       "id": "headed-docx-002",
       "fixture_id": "headed-docx",
       "title": "headed_policy.docx",
-      "content": "办理时效：在职证明应在两个工作日内开具。",
+      "facts": ["在职证明应在两个工作日内开具。"],
       "page_start": null,
       "page_end": null,
       "section_path": ["员工证明开具制度", "办理时效"],
-      "element_types": ["heading", "paragraph"]
-    },
-    {
-      "id": "headed-docx-003",
-      "fixture_id": "headed-docx",
-      "title": "headed_policy.docx",
-      "content": "申请人应通过员工服务渠道提交证明开具需求。",
-      "page_start": null,
-      "page_end": null,
-      "section_path": ["员工证明开具制度", "申请方式"],
-      "element_types": ["heading", "paragraph"]
+      "element_types": ["paragraph"]
     },
     {
       "id": "multi-sheet-xlsx-001",
       "fixture_id": "multi-sheet-xlsx",
       "title": "hr_contacts.xlsx",
-      "content": "HR联系人：薪酬问题请联系 payroll@example.test。",
+      "facts": ["payroll@example.test"],
       "page_start": null,
       "page_end": null,
       "section_path": [],
-      "element_types": ["table"]
+      "element_types": ["table"],
+      "metadata": {"sheet_name": "HR联系人"}
     },
     {
       "id": "multi-sheet-xlsx-002",
       "fixture_id": "multi-sheet-xlsx",
       "title": "hr_contacts.xlsx",
-      "content": "办公地点：上海。联系人：测试联系人。",
+      "facts": ["上海", "测试联系人"],
       "page_start": null,
       "page_end": null,
       "section_path": [],
-      "element_types": ["table"]
+      "element_types": ["table"],
+      "metadata": {"sheet_name": "办公地点"}
     }
   ]
 }

@@ -110,7 +110,10 @@ def test_upgrade_head_creates_document_tables_for_empty_database(tmp_path):
             "embedding_id", "token_count", "keywords", "status"} <= set(chunk_columns)
     assert document_columns["audience_roles"]["nullable"] is False
     assert document_columns["audience_roles"]["default"] == "'[]'"
-    assert {foreign_key["referred_table"] for foreign_key in inspector.get_foreign_keys("documents")} == {"tenants"}
+    assert {
+        foreign_key["referred_table"]
+        for foreign_key in inspector.get_foreign_keys("documents")
+    } == {"tenants", "users", "document_families"}
     assert {foreign_key["referred_table"] for foreign_key in inspector.get_foreign_keys("document_chunks")} == {"documents"}
     assert {index["name"] for index in inspector.get_indexes("documents")} >= {
         "ix_documents_tenant_id", "ix_documents_file_hash",

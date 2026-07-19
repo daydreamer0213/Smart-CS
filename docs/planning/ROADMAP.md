@@ -30,7 +30,21 @@
 - 保留 M2-1 的 9 语料、7 个解析成功、2 个错误和 16/18 事实基线，新增独立 structured benchmark，避免改进结果覆盖历史口径。
 - 已交付 PyMuPDF 快速路径、Docling/Tesseract 高级路由、确定性结构化分块、页/章节/source lineage、质量门禁和 page-aware citation。
 - 合成语料 gate 达到 18/18 parsed facts、18/18 chunk facts；表格关联、双栏顺序、PDF/DOCX/XLSX provenance 均通过，加密 PDF 被阻止索引并只返回安全原因。
-- 结果仅证明合成语料验收通过；CPU OCR 存在运行差异，document version/reindex lifecycle 及双外部索引的重试/对账仍留待 M2-3/M2-4，Milestone 2 继续进行。
+- 结果仅证明合成语料验收通过；CPU OCR 仍存在运行差异。后续 M2-3/M2-4 已交付质量门禁和治理生命周期，Milestone 2 继续到 M2-5 检索评测完成。
+
+### M2-3: 解析质量门禁 [status: delivered]
+**Delivered:** 2026-07-19
+
+- 解析结果按 `passed`、`review_required`、`failed` 分级，低质量文档不会静默进入员工知识库。
+- 后台只返回受控诊断指标和警告，不泄漏解析器内部路径或异常细节。
+
+### M2-4: 文档治理生命周期 [status: delivered]
+**Delivered:** 2026-07-19
+
+- 原件按内容寻址留存在 `D:\DevData\smartcs\documents`，文档家族、业务版本、索引代次和模型血缘可追溯。
+- 新上传快照默认待审；批准后原子切换 `current_document_id`，员工 SQL 检索只放行当前、已批准、已生效、未过期且角色允许的版本。
+- reindex 创建同业务版本的下一索引代次；解析、质量、Embedding、Chroma 或 BM25 失败时旧版本继续可用，部分外部写入执行尽力清理。
+- 当前发布版本禁止删除；非当前版本删除时仅在没有共享引用后清理原件。
 
 ### Delivery Scope
 

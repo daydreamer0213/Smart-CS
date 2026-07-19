@@ -29,7 +29,21 @@ def test_live_demo_stops_when_assistant_model_is_unavailable(monkeypatch):
         if path == "/api/v1/auth/register":
             return 201, {"access_token": "redacted", "user": {"id": "user-1"}}
         if path.endswith("/documents/upload"):
-            return 201, {"document_id": "doc-1", "status": "ready", "chunk_count": 1}
+            return 201, {
+                "document_id": "doc-1",
+                "family_id": "family-1",
+                "version": 1,
+                "index_generation": 1,
+                "review_status": "pending_review",
+                "status": "ready",
+                "chunk_count": 1,
+            }
+        if path.endswith("/documents/doc-1/review"):
+            return 200, {
+                "document_id": "doc-1",
+                "review_status": "approved",
+                "is_current": True,
+            }
         if path.endswith("/assistant/chat"):
             return 503, {"detail": "Assistant model is not configured"}
         raise AssertionError(f"unexpected request: {method} {path}")
@@ -40,7 +54,7 @@ def test_live_demo_stops_when_assistant_model_is_unavailable(monkeypatch):
         demo.main()
 
 
-def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch):
+def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch, capsys):
     calls = []
     monkeypatch.setenv("SMARTCS_DEMO_PASSWORD", "ignored-by-script")
     monkeypatch.setattr(secrets, "token_urlsafe", lambda _size: "generated-at-runtime")
@@ -63,7 +77,35 @@ def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch):
             assert kwargs["json_body"]["password"] == "generated-at-runtime"
             return 201, next(registrations)
         if path.endswith("/documents/upload"):
-            return 201, {"document_id": "doc-1", "status": "ready", "chunk_count": 1}
+            return 201, {
+                "document_id": "doc-1",
+                "family_id": "family-1",
+                "version": 1,
+                "index_generation": 1,
+                "review_status": "pending_review",
+                "status": "ready",
+                "chunk_count": 1,
+            }
+        if path.endswith("/documents/doc-1/review"):
+            assert kwargs["json_body"] == {"decision": "approved"}
+            return 200, {
+                "document_id": "doc-1",
+                "family_id": "family-1",
+                "review_status": "approved",
+                "reviewed_by_user_id": "owner-1",
+                "is_current": True,
+            }
+        if path.endswith("/documents/doc-1/reindex"):
+            return 200, {
+                "document_id": "doc-2",
+                "source_document_id": "doc-1",
+                "family_id": "family-1",
+                "version": 1,
+                "index_generation": 2,
+                "status": "ready",
+                "error_message": None,
+                "is_current": True,
+            }
         if path.endswith("/assistant/chat"):
             return 200, next(chats)
         if path.endswith("/drafts/draft-1/confirm"):
@@ -84,8 +126,25 @@ def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch):
 
     assert demo.main() == 0
     paths = [path for _method, path, _kwargs in calls]
-    assert any(path.endswith("/assistant/chat") for path in paths)
+    review_index = next(
+        index for index, path in enumerate(paths)
+        if path.endswith("/documents/doc-1/review")
+    )
+    chat_index = next(
+        index for index, path in enumerate(paths)
+        if path.endswith("/assistant/chat")
+    )
+    reindex_index = next(
+        index for index, path in enumerate(paths)
+        if path.endswith("/documents/doc-1/reindex")
+    )
+    assert review_index < chat_index < reindex_index
     assert any(path.endswith("/drafts/draft-1/confirm") for path in paths)
     assert any(path.endswith("/hr-support/admin/handoff-1") for path in paths)
     assert any(path.endswith("/hr-support/me") for path in paths)
     assert demo._demo_password() == "generated-at-runtime"
+    output = capsys.readouterr().out
+    assert "owner-token" not in output
+    assert "employee-token" not in output
+    assert "storage_key" not in output
+    assert "D:\\DevData" not in output

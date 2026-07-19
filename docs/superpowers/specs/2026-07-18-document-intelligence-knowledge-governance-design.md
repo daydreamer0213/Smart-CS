@@ -278,6 +278,12 @@ Add original-file storage, version/effective-date fields, review status,
 atomic reindex generations, quality inspection, and failure-safe rollback to
 the last approved generation.
 
+**Delivered 2026-07-19:** SmartCS now retains content-addressed originals on
+`D:`, publishes only explicitly approved current snapshots through the SQL
+authorization boundary, and builds immutable reindex generations. Parse,
+quality, embedding, vector, BM25, integrity, and concurrent-publication
+failures leave the last published generation available.
+
 ### Stage 5: Evaluation and Delivery
 
 Run parsing and retrieval benchmarks, document results and limitations, update

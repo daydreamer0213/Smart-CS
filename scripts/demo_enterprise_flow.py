@@ -199,8 +199,34 @@ def main() -> int:
     _require(status, {201}, "document upload")
     if document.get("status") != "ready" or not document.get("document_id"):
         raise DemoFailure("document upload did not finish in ready state")
+    if document.get("review_status") != "pending_review":
+        raise DemoFailure("document upload did not enter pending review")
     document_id = str(document["document_id"])
-    _show_summary(document_id=document_id, status=document["status"])
+    _show_summary(
+        document_id=document_id,
+        family_id=document.get("family_id"),
+        version=document.get("version"),
+        index_generation=document.get("index_generation"),
+        review_status=document.get("review_status"),
+        status=document["status"],
+    )
+
+    _print_step("Approve and publish the governed policy")
+    status, reviewed = _request(
+        "POST",
+        f"/api/v1/admin/{slug}/documents/{document_id}/review",
+        token=owner_token,
+        json_body={"decision": "approved"},
+    )
+    _require(status, {200}, "document review")
+    if reviewed.get("review_status") != "approved" or not reviewed.get("is_current"):
+        raise DemoFailure("document review did not publish the approved snapshot")
+    _show_summary(
+        document_id=document_id,
+        family_id=reviewed.get("family_id"),
+        review_status=reviewed.get("review_status"),
+        is_current=reviewed.get("is_current"),
+    )
 
     session_id = f"demo-session-{int(time.time())}"
     _print_step("Employee asks a cited policy question")
@@ -213,6 +239,24 @@ def main() -> int:
     _require_live_chat(status, "policy question")
     _require_cited_answer(policy_chat)
     _show_summary(source_ids=[source.get("source_id") for source in policy_chat["sources"]], status="cited")
+
+    _print_step("Reindex the current policy without service interruption")
+    status, rebuilt = _request(
+        "POST",
+        f"/api/v1/admin/{slug}/documents/{document_id}/reindex",
+        token=owner_token,
+    )
+    _require(status, {200}, "document reindex")
+    if rebuilt.get("status") != "ready" or not rebuilt.get("is_current"):
+        raise DemoFailure("document reindex did not publish the new generation")
+    _show_summary(
+        document_id=rebuilt.get("document_id"),
+        family_id=rebuilt.get("family_id"),
+        version=rebuilt.get("version"),
+        index_generation=rebuilt.get("index_generation"),
+        status=rebuilt.get("status"),
+        is_current=rebuilt.get("is_current"),
+    )
 
     _print_step("Employee requests an overseas assignment exception")
     status, exception_chat = _request(

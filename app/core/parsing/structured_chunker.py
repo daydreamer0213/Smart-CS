@@ -13,11 +13,12 @@ def _token_count(text: str) -> int:
     return len(_ENCODING.encode(text))
 
 
-def _split_text(text: str) -> list[str]:
+def _split_text(text: str, max_tokens: int | None = None) -> list[str]:
+    max_tokens = max_tokens or MAX_TOKENS
     tokens = _ENCODING.encode(text)
     return [
-        _ENCODING.decode(tokens[start : start + MAX_TOKENS]).strip()
-        for start in range(0, len(tokens), MAX_TOKENS)
+        _ENCODING.decode(tokens[start : start + max_tokens]).strip()
+        for start in range(0, len(tokens), max_tokens)
     ]
 
 
@@ -27,9 +28,17 @@ def _split_table(text: str) -> list[str]:
         return _split_text(text)
 
     header = "\n".join(lines[:2])
+    header_prefix = f"{header}\n"
+    row_budget = MAX_TOKENS - _token_count(header_prefix)
     chunks: list[str] = []
     rows: list[str] = []
     for row in lines[2:]:
+        if _token_count(f"{header_prefix}{row}") > MAX_TOKENS:
+            if rows:
+                chunks.append("\n".join([header, *rows]))
+                rows = []
+            chunks.extend(f"{header_prefix}{part}" for part in _split_text(row, row_budget))
+            continue
         candidate = "\n".join([header, *rows, row])
         if rows and _token_count(candidate) > MAX_TOKENS:
             chunks.append("\n".join([header, *rows]))

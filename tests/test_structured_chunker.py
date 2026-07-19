@@ -136,6 +136,33 @@ def test_chunk_document_repeats_table_header_when_splitting(monkeypatch):
     assert [chunk.page_start for chunk in chunks] == [2, 2, 2]
 
 
+def test_chunk_document_splits_a_single_oversized_table_row(monkeypatch):
+    from app.core.parsing import structured_chunker
+
+    monkeypatch.setattr(structured_chunker, "MAX_TOKENS", 24)
+    header = "| Item | Detail |\n| --- | --- |"
+    row = f"| Carryover | {'extended ' * 40}|"
+    table = f"{header}\n{row}"
+
+    chunks = structured_chunker.chunk_document(
+        _document(
+            ParsedElement(
+                text=table,
+                table_markdown=table,
+                element_type="table",
+                page_start=2,
+                section_path=["Leave", "Carryover"],
+            )
+        ),
+        title="Employee Handbook",
+    )
+
+    assert all(chunk.token_count <= structured_chunker.MAX_TOKENS for chunk in chunks)
+    assert len(chunks) > 1
+    assert all(chunk.content.startswith(header) for chunk in chunks)
+    assert all(chunk.source_element_indexes == [0] for chunk in chunks)
+
+
 def test_chunk_document_splits_oversized_elements_deterministically(monkeypatch):
     from app.core.parsing import structured_chunker
 

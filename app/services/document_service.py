@@ -1,25 +1,29 @@
 """Document upload, listing, retrieval, and deletion."""
 
 import asyncio
+from datetime import date
 import hashlib
 import time
 import structlog
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.parsing.quality import (
     SAFE_PARSE_ERROR_MESSAGE,
     evaluate_parse_quality,
     parser_failure_quality,
 )
 from app.core.parsing.router import parse_structured_file
-from app.core.parsing.structured_chunker import chunk_document
+from app.core.parsing.structured_chunker import CHUNKER_VERSION, chunk_document
 from app.core.retrieval_module import (
     get_bm25_manager,
     get_embedding_provider,
     get_vector_store,
 )
-from app.models.document import Document, DocumentChunk
+from app.models.document import Document, DocumentChunk, DocumentFamily
+from app.services.document_storage import store_original
 
 logger = structlog.get_logger()
 
@@ -39,32 +43,88 @@ async def upload_document(
     filename: str,
     file_data: bytes,
     audience_roles: list[str] | None = None,
+    *,
+    family_id: str | None = None,
+    family_name: str | None = None,
+    effective_date: date | None = None,
+    expiry_date: date | None = None,
+    owner_user_id: str | None = None,
 ) -> Document:
     if len(file_data) == 0:
         raise ValueError("Empty file")
     if len(file_data) > MAX_FILE_SIZE:
         raise ValueError("File too large (max 20 MB)")
+    if effective_date and expiry_date and expiry_date < effective_date:
+        raise ValueError("Expiry date cannot be before effective date")
 
     file_hash = _hash_content(file_data)
-
-    # Dedup check
-    existing = db.query(Document).filter(
-        Document.tenant_id == tenant_id,
-        Document.file_hash == file_hash,
-    ).first()
-    if existing:
-        raise ValueError("Document already imported")
-
     file_type = filename.rsplit(".", 1)[-1].lower()
+
+    if family_id is None:
+        existing = db.query(Document).filter(
+            Document.tenant_id == tenant_id,
+            Document.file_hash == file_hash,
+        ).first()
+        if existing:
+            raise ValueError("Document already imported")
+        family = DocumentFamily(
+            tenant_id=tenant_id,
+            name=(family_name or "").strip() or filename,
+            owner_user_id=owner_user_id,
+        )
+        version = 1
+    else:
+        family = db.query(DocumentFamily).filter(
+            DocumentFamily.id == family_id,
+            DocumentFamily.tenant_id == tenant_id,
+        ).first()
+        if family is None:
+            raise ValueError("Document family not found")
+        same_content = db.query(Document).filter(
+            Document.tenant_id == tenant_id,
+            Document.family_id == family.id,
+            Document.file_hash == file_hash,
+        ).all()
+        if any(
+            set(document.audience_roles or []) == set(audience_roles or [])
+            and document.effective_date == effective_date
+            and document.expiry_date == expiry_date
+            for document in same_content
+        ):
+            raise ValueError("Document already imported")
+        version = (
+            db.query(func.max(Document.version))
+            .filter(Document.family_id == family.id)
+            .scalar()
+            or 0
+        ) + 1
+
+    storage_key = store_original(tenant_id, file_hash, f".{file_type}", file_data)
+    if family_id is None:
+        db.add(family)
+        db.flush()
 
     doc = Document(
         tenant_id=tenant_id,
+        family_id=family.id,
         filename=filename,
         file_type=file_type,
         file_size=len(file_data),
         file_hash=file_hash,
         status="processing",
         audience_roles=audience_roles or [],
+        version=version,
+        index_generation=1,
+        review_status="pending_review",
+        effective_date=effective_date,
+        expiry_date=expiry_date,
+        source_type="upload",
+        source_ref=filename,
+        storage_key=storage_key,
+        owner_user_id=owner_user_id,
+        chunker_version=CHUNKER_VERSION,
+        embedding_provider=settings.embedding_provider,
+        embedding_model=settings.embedding_model,
     )
     db.add(doc)
     db.flush()
@@ -136,6 +196,9 @@ async def upload_document(
             section_path=parsed_chunk.section_path,
             element_types=parsed_chunk.element_types,
             source_element_indexes=parsed_chunk.source_element_indexes,
+            index_generation=doc.index_generation,
+            chunker_version=CHUNKER_VERSION,
+            embedding_model=settings.embedding_model,
         )
         db.add(chunk)
         db.flush()
@@ -183,6 +246,7 @@ async def upload_document(
                     "source": "document",
                     "document_id": doc.id,
                     "chunk_index": chunk.chunk_index,
+                    "index_generation": doc.index_generation,
                 },
             )
 

@@ -1,11 +1,43 @@
 """Admin document API integration tests."""
 
+from datetime import date
 from types import SimpleNamespace
 
 import pytest
 
-from app.models.document import Document, DocumentChunk
+from app.models.document import Document, DocumentChunk, DocumentFamily
 from app.services import document_service
+
+
+def _governed_document(**overrides):
+    values = {
+        "id": "doc-governed",
+        "filename": "policy.txt",
+        "chunk_count": 1,
+        "status": "ready",
+        "audience_roles": ["employee"],
+        "family_id": "family-1",
+        "family": SimpleNamespace(
+            name="Annual leave policy",
+            current_document_id=None,
+        ),
+        "version": 2,
+        "index_generation": 1,
+        "review_status": "pending_review",
+        "effective_date": None,
+        "expiry_date": None,
+        "owner_user_id": None,
+        "reviewed_by_user_id": None,
+        "reviewed_at": None,
+        "source_type": "upload",
+        "source_ref": "policy.txt",
+        "storage_key": "tenant/private/source.txt",
+        "chunker_version": "structured-v1",
+        "embedding_provider": "openai",
+        "embedding_model": "test-embedding",
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
 
 
 class _FakeRetrieval:
@@ -23,6 +55,13 @@ class _FakeRetrieval:
 def fake_retrieval(monkeypatch):
     monkeypatch.setattr(document_service, "get_vector_store", _FakeRetrieval)
     monkeypatch.setattr(document_service, "get_bm25_manager", _FakeRetrieval)
+    monkeypatch.setattr(
+        document_service,
+        "store_original",
+        lambda tenant_id, file_hash, suffix, _data: (
+            f"{tenant_id}/{file_hash}{suffix}"
+        ),
+    )
 
 
 async def test_document_upload_accepts_and_returns_audience_roles(
@@ -150,6 +189,80 @@ async def test_document_upload_rejects_invalid_audience_role(
     assert response.status_code == 422
 
 
+async def test_document_upload_accepts_governance_fields_without_exposing_storage_key(
+    admin_client, test_tenant, monkeypatch,
+):
+    captured = {}
+
+    async def fake_upload(*_args, **kwargs):
+        captured.update(kwargs)
+        return _governed_document()
+
+    monkeypatch.setattr(document_service, "upload_document", fake_upload)
+    response = await admin_client.post(
+        f"/api/v1/admin/{test_tenant.slug}/documents/upload",
+        files={"file": ("policy.txt", b"policy", "text/plain")},
+        data={
+            "audience_roles": "employee",
+            "family_id": "family-1",
+            "family_name": "Annual leave policy",
+            "effective_date": "2026-01-01",
+            "expiry_date": "2026-12-31",
+        },
+    )
+
+    assert response.status_code == 201
+    assert captured["family_id"] == "family-1"
+    assert captured["family_name"] == "Annual leave policy"
+    assert captured["effective_date"].isoformat() == "2026-01-01"
+    assert captured["expiry_date"].isoformat() == "2026-12-31"
+    assert captured["owner_user_id"] is None
+    payload = response.json()
+    assert payload["family_id"] == "family-1"
+    assert payload["family_name"] == "Annual leave policy"
+    assert payload["version"] == 2
+    assert payload["index_generation"] == 1
+    assert payload["review_status"] == "pending_review"
+    assert payload["original_file_available"] is True
+    assert "storage_key" not in payload
+    assert "private" not in response.text
+
+
+async def test_document_upload_uses_jwt_admin_as_owner(
+    client, db, test_tenant, monkeypatch,
+):
+    from app.core.auth.security import hash_password
+    from app.core.auth.token import create_access_token
+    from app.models.user import User
+
+    owner = User(
+        tenant_id=test_tenant.id,
+        email="document-owner@example.com",
+        password_hash=hash_password("not-used-in-test"),
+        display_name="Document Owner",
+        role="owner",
+        is_active=True,
+    )
+    db.add(owner)
+    db.commit()
+    captured = {}
+
+    async def fake_upload(*_args, **kwargs):
+        captured.update(kwargs)
+        return _governed_document(owner_user_id=owner.id)
+
+    monkeypatch.setattr(document_service, "upload_document", fake_upload)
+    response = await client.post(
+        f"/api/v1/admin/{test_tenant.slug}/documents/upload",
+        headers={"Authorization": f"Bearer {create_access_token(owner)}"},
+        files={"file": ("policy.txt", b"policy", "text/plain")},
+    )
+
+    assert response.status_code == 201
+    assert captured["owner_user_id"] == owner.id
+    assert response.json()["owner_user_id"] == owner.id
+
+
 async def test_document_list_returns_audience_roles(admin_client, db, test_tenant):
     db.add(Document(
         tenant_id=test_tenant.id,
@@ -168,6 +281,60 @@ async def test_document_list_returns_audience_roles(admin_client, db, test_tenan
 
     assert response.status_code == 200
     assert response.json()["items"][0]["audience_roles"] == ["admin"]
+
+
+async def test_document_list_returns_governance_without_storage_key(
+    admin_client, db, test_tenant,
+):
+    family = DocumentFamily(
+        tenant_id=test_tenant.id,
+        name="Annual leave policy",
+    )
+    db.add(family)
+    db.flush()
+    document = Document(
+        tenant_id=test_tenant.id,
+        family_id=family.id,
+        filename="annual-leave.pdf",
+        file_type="pdf",
+        file_size=10,
+        file_hash="governed-list-hash",
+        status="ready",
+        version=2,
+        index_generation=3,
+        review_status="approved",
+        effective_date=date(2026, 1, 1),
+        source_type="upload",
+        source_ref="annual-leave.pdf",
+        storage_key="tenant/private/original.pdf",
+        chunker_version="structured-v1",
+        embedding_provider="openai",
+        embedding_model="test-embedding",
+    )
+    db.add(document)
+    db.flush()
+    family.current_document_id = document.id
+    db.commit()
+
+    response = await admin_client.get(
+        f"/api/v1/admin/{test_tenant.slug}/documents"
+    )
+
+    assert response.status_code == 200
+    item = next(
+        item for item in response.json()["items"]
+        if item["filename"] == "annual-leave.pdf"
+    )
+    assert item["family_id"] == family.id
+    assert item["family_name"] == "Annual leave policy"
+    assert item["version"] == 2
+    assert item["index_generation"] == 3
+    assert item["review_status"] == "approved"
+    assert item["effective_date"] == "2026-01-01"
+    assert item["is_current"] is True
+    assert item["original_file_available"] is True
+    assert "storage_key" not in item
+    assert "private" not in response.text
 
 
 async def test_document_list_returns_explicit_provenance_and_legacy_nulls(
@@ -255,6 +422,9 @@ async def test_document_chunks_return_explicit_provenance(
         section_path=["HR", "Leave"],
         element_types=["paragraph", "table"],
         source_element_indexes=[4, 5],
+        index_generation=2,
+        chunker_version="structured-v1",
+        embedding_model="test-embedding",
     ))
     db.commit()
 
@@ -269,6 +439,9 @@ async def test_document_chunks_return_explicit_provenance(
     assert chunk["section_path"] == ["HR", "Leave"]
     assert chunk["element_types"] == ["paragraph", "table"]
     assert chunk["source_element_indexes"] == [4, 5]
+    assert chunk["index_generation"] == 2
+    assert chunk["chunker_version"] == "structured-v1"
+    assert chunk["embedding_model"] == "test-embedding"
 
 
 async def test_document_upload_endpoint(admin_client, test_tenant):

@@ -1,5 +1,6 @@
 """Document upload/management schemas."""
 
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -43,6 +44,23 @@ class DocumentResponse(BaseModel):
     page_count: int | None = None
     parse_quality_status: str | None = None
     parse_quality_details: ParseQualityDetailsResponse | None = None
+    family_id: str | None = None
+    family_name: str | None = None
+    version: int | None = None
+    index_generation: int | None = None
+    review_status: str | None = None
+    effective_date: date | None = None
+    expiry_date: date | None = None
+    owner_user_id: str | None = None
+    reviewed_by_user_id: str | None = None
+    reviewed_at: datetime | None = None
+    source_type: str | None = None
+    source_ref: str | None = None
+    chunker_version: str | None = None
+    embedding_provider: str | None = None
+    embedding_model: str | None = None
+    is_current: bool = False
+    original_file_available: bool = False
     created_at: str
     updated_at: str
 
@@ -69,6 +87,9 @@ class DocumentChunkResponse(BaseModel):
     section_path: list[str] | None = None
     element_types: list[str] | None = None
     source_element_indexes: list[int] | None = None
+    index_generation: int | None = None
+    chunker_version: str | None = None
+    embedding_model: str | None = None
     created_at: str
     updated_at: str
 
@@ -87,3 +108,20 @@ class DocumentUploadResponse(BaseModel):
     parse_quality_status: str | None = None
     parse_quality_details: ParseQualityDetailsResponse | None = None
     error_message: str | None = None
+    family_id: str | None = None
+    family_name: str | None = None
+    version: int | None = None
+    index_generation: int | None = None
+    review_status: str | None = None
+    effective_date: date | None = None
+    expiry_date: date | None = None
+    owner_user_id: str | None = None
+    reviewed_by_user_id: str | None = None
+    reviewed_at: datetime | None = None
+    source_type: str | None = None
+    source_ref: str | None = None
+    chunker_version: str | None = None
+    embedding_provider: str | None = None
+    embedding_model: str | None = None
+    is_current: bool = False
+    original_file_available: bool = False

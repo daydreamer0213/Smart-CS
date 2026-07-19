@@ -43,6 +43,7 @@ def test_document_parser_defaults_keep_large_artifacts_under_d_devdata_root():
     settings = Settings(_env_file=None)
 
     assert settings.parser_data_root == "D:/DevData/smartcs"
+    assert settings.document_storage_dir == "D:/DevData/smartcs/documents"
     assert settings.parser_temp_dir == "D:/DevData/smartcs/tmp"
     assert settings.docling_artifacts_path == "D:/DevData/smartcs/docling/artifacts"
     assert settings.hf_home == "D:/DevData/smartcs/huggingface"
@@ -55,6 +56,7 @@ def test_document_parser_defaults_keep_large_artifacts_under_d_devdata_root():
 
 def test_document_parser_allows_child_overrides_under_default_root(monkeypatch):
     monkeypatch.setenv("PARSER_TEMP_DIR", "D:/DevData/smartcs/custom/tmp")
+    monkeypatch.setenv("DOCUMENT_STORAGE_DIR", "D:/DevData/smartcs/custom/documents")
     monkeypatch.setenv("DOCLING_ARTIFACTS_PATH", "D:/DevData/smartcs/custom/artifacts")
     monkeypatch.setenv("HF_HOME", "D:/DevData/smartcs/custom/huggingface")
     monkeypatch.setenv("TORCH_HOME", "D:/DevData/smartcs/custom/torch")
@@ -64,6 +66,7 @@ def test_document_parser_allows_child_overrides_under_default_root(monkeypatch):
     settings = Settings(_env_file=None)
 
     assert settings.parser_temp_dir == "D:/DevData/smartcs/custom/tmp"
+    assert settings.document_storage_dir == "D:/DevData/smartcs/custom/documents"
     assert settings.docling_artifacts_path == "D:/DevData/smartcs/custom/artifacts"
     assert settings.hf_home == "D:/DevData/smartcs/custom/huggingface"
     assert settings.torch_home == "D:/DevData/smartcs/custom/torch"
@@ -94,6 +97,13 @@ def test_document_parser_rejects_temp_dir_outside_default_root(monkeypatch):
         Settings(_env_file=None)
 
 
+def test_document_parser_rejects_storage_dir_outside_default_root(monkeypatch):
+    monkeypatch.setenv("DOCUMENT_STORAGE_DIR", "C:/SmartCS/documents")
+
+    with pytest.raises(ValidationError, match="parser_data_root"):
+        Settings(_env_file=None)
+
+
 def test_document_parser_rejects_non_cpu_device(monkeypatch):
     monkeypatch.setenv("DOCLING_DEVICE", "cuda")
 
@@ -104,6 +114,7 @@ def test_document_parser_rejects_non_cpu_device(monkeypatch):
 def test_document_parser_allows_an_explicit_portable_data_root(monkeypatch):
     monkeypatch.setenv("PARSER_DATA_ROOT", "/var/lib/smartcs")
     monkeypatch.setenv("PARSER_TEMP_DIR", "/var/lib/smartcs/tmp")
+    monkeypatch.setenv("DOCUMENT_STORAGE_DIR", "/var/lib/smartcs/documents")
     monkeypatch.setenv("DOCLING_ARTIFACTS_PATH", "/var/lib/smartcs/docling/artifacts")
     monkeypatch.setenv("HF_HOME", "/var/lib/smartcs/huggingface")
     monkeypatch.setenv("TORCH_HOME", "/var/lib/smartcs/torch")
@@ -114,6 +125,7 @@ def test_document_parser_allows_an_explicit_portable_data_root(monkeypatch):
 
     assert settings.parser_data_root == "/var/lib/smartcs"
     assert settings.parser_temp_dir == "/var/lib/smartcs/tmp"
+    assert settings.document_storage_dir == "/var/lib/smartcs/documents"
     assert settings.tessdata_prefix == "/var/lib/smartcs/tesseract/tessdata/"
 
 
@@ -143,6 +155,7 @@ def test_parser_runtime_is_configured_from_settings_before_docling_validation(
     settings = Settings(
         _env_file=None,
         parser_data_root=str(root),
+        document_storage_dir=str(root / "documents"),
         parser_temp_dir=str(temp_dir),
         docling_artifacts_path=str(artifacts),
         hf_home=str(hf_home),

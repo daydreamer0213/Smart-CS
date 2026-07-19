@@ -1,5 +1,7 @@
 """Document service tests — upload, list, get, delete."""
 
+from datetime import date
+
 import pytest
 
 from app.core.parsing.contracts import (
@@ -76,6 +78,12 @@ def fake_retrieval(monkeypatch):
     monkeypatch.setattr(
         "app.services.document_service.get_bm25_manager", _FakeRetrieval
     )
+    monkeypatch.setattr(
+        "app.services.document_service.store_original",
+        lambda tenant_id, file_hash, suffix, _data: (
+            f"{tenant_id}/{file_hash}{suffix}"
+        ),
+    )
 
 
 class TestParseFile:
@@ -131,6 +139,220 @@ class TestChunker:
 
 
 class TestDocumentUpload:
+    async def test_upload_creates_pending_governed_snapshot_with_lineage(
+        self, db, test_tenant, monkeypatch,
+    ):
+        from app.config import settings
+        from app.models.document import DocumentFamily
+        from app.services.document_service import list_chunks, upload_document
+
+        monkeypatch.setattr(
+            "app.services.document_service.parse_structured_file",
+            lambda *_: _parsed_document(),
+        )
+        monkeypatch.setattr(
+            "app.services.document_service.chunk_document",
+            lambda *_: [_knowledge_chunk()],
+        )
+        monkeypatch.setattr(
+            "app.services.document_service.store_original",
+            lambda *_: "tenant/source.txt",
+            raising=False,
+        )
+        monkeypatch.setattr(settings, "embedding_provider", "test-provider")
+        monkeypatch.setattr(settings, "embedding_model", "test-embedding")
+
+        doc = await upload_document(
+            db,
+            test_tenant.id,
+            test_tenant.slug,
+            "policy.txt",
+            b"governed policy",
+            audience_roles=["employee"],
+            family_name="Annual leave policy",
+            effective_date=date(2026, 1, 1),
+            expiry_date=date(2026, 12, 31),
+            owner_user_id="owner-1",
+        )
+
+        family = db.query(DocumentFamily).filter_by(id=doc.family_id).one()
+        chunk = list_chunks(db, doc.id)[0]
+        assert family.name == "Annual leave policy"
+        assert family.owner_user_id == "owner-1"
+        assert family.current_document_id is None
+        assert doc.version == 1
+        assert doc.index_generation == 1
+        assert doc.review_status == "pending_review"
+        assert doc.source_type == "upload"
+        assert doc.source_ref == "policy.txt"
+        assert doc.storage_key == "tenant/source.txt"
+        assert doc.owner_user_id == "owner-1"
+        assert doc.chunker_version == "structured-v1"
+        assert doc.embedding_provider == "test-provider"
+        assert doc.embedding_model == "test-embedding"
+        assert chunk.index_generation == 1
+        assert chunk.chunker_version == "structured-v1"
+        assert chunk.embedding_model == "test-embedding"
+
+    async def test_upload_allocates_next_business_version_in_family(
+        self, db, test_tenant, monkeypatch,
+    ):
+        from app.services.document_service import upload_document
+
+        monkeypatch.setattr(
+            "app.services.document_service.parse_structured_file",
+            lambda *_: _parsed_document(),
+        )
+        monkeypatch.setattr(
+            "app.services.document_service.chunk_document",
+            lambda *_: [_knowledge_chunk()],
+        )
+        monkeypatch.setattr(
+            "app.services.document_service.store_original",
+            lambda _tenant, file_hash, _suffix, _data: f"tenant/{file_hash}.txt",
+            raising=False,
+        )
+        first = await upload_document(
+            db, test_tenant.id, test_tenant.slug, "v1.txt", b"version one"
+        )
+
+        second = await upload_document(
+            db,
+            test_tenant.id,
+            test_tenant.slug,
+            "v2.txt",
+            b"version two",
+            family_id=first.family_id,
+        )
+
+        assert second.family_id == first.family_id
+        assert (first.version, second.version) == (1, 2)
+        assert second.index_generation == 1
+
+    async def test_same_content_can_create_version_when_governance_changes(
+        self, db, test_tenant,
+    ):
+        from app.services.document_service import upload_document
+
+        data = b"stable policy text"
+        first = await upload_document(
+            db,
+            test_tenant.id,
+            test_tenant.slug,
+            "policy-v1.txt",
+            data,
+            audience_roles=["employee"],
+            effective_date=date(2026, 1, 1),
+        )
+
+        second = await upload_document(
+            db,
+            test_tenant.id,
+            test_tenant.slug,
+            "policy-v2.txt",
+            data,
+            audience_roles=["employee"],
+            family_id=first.family_id,
+            effective_date=date(2026, 2, 1),
+        )
+
+        assert second.family_id == first.family_id
+        assert second.version == 2
+        assert second.file_hash == first.file_hash
+        with pytest.raises(ValueError, match="already imported"):
+            await upload_document(
+                db,
+                test_tenant.id,
+                test_tenant.slug,
+                "policy-v2-copy.txt",
+                data,
+                audience_roles=["employee"],
+                family_id=first.family_id,
+                effective_date=date(2026, 2, 1),
+            )
+
+    async def test_upload_rejects_invalid_effective_period(
+        self, db, test_tenant,
+    ):
+        from app.services.document_service import upload_document
+
+        with pytest.raises(ValueError, match="Expiry date"):
+            await upload_document(
+                db,
+                test_tenant.id,
+                test_tenant.slug,
+                "policy.txt",
+                b"invalid dates",
+                effective_date=date(2026, 2, 1),
+                expiry_date=date(2026, 1, 1),
+            )
+
+    async def test_upload_rejects_cross_tenant_family_before_storing(
+        self, db, test_tenant, monkeypatch,
+    ):
+        from app.models.document import DocumentFamily
+        from app.models.tenant import Tenant
+        from app.services.document_service import upload_document
+
+        other_tenant = Tenant(
+            slug="other-governance-tenant",
+            name="Other Governance Tenant",
+            config_json={},
+            is_active=True,
+        )
+        db.add(other_tenant)
+        db.flush()
+        family = DocumentFamily(
+            tenant_id=other_tenant.id,
+            name="Private policy",
+        )
+        db.add(family)
+        db.commit()
+
+        def fail_store(*_args):
+            pytest.fail("cross-tenant upload must be rejected before file storage")
+
+        monkeypatch.setattr(
+            "app.services.document_service.store_original", fail_store
+        )
+
+        with pytest.raises(ValueError, match="Document family not found"):
+            await upload_document(
+                db,
+                test_tenant.id,
+                test_tenant.slug,
+                "private.txt",
+                b"private policy",
+                family_id=family.id,
+            )
+
+        db.delete(family)
+        db.delete(other_tenant)
+        db.commit()
+
+    async def test_parse_failure_retains_original_for_reprocessing(
+        self, db, test_tenant, monkeypatch,
+    ):
+        from app.services.document_service import upload_document
+
+        monkeypatch.setattr(
+            "app.services.document_service.store_original",
+            lambda *_: "tenant/failed.pdf",
+            raising=False,
+        )
+        monkeypatch.setattr(
+            "app.services.document_service.parse_structured_file",
+            lambda *_: (_ for _ in ()).throw(RuntimeError("private parser detail")),
+        )
+
+        doc = await upload_document(
+            db, test_tenant.id, test_tenant.slug, "failed.pdf", b"broken pdf"
+        )
+
+        assert doc.status == "failed"
+        assert doc.storage_key == "tenant/failed.pdf"
+        assert doc.review_status == "pending_review"
+
     def test_legacy_document_provenance_is_unknown(self, db, test_tenant):
         from app.models.document import Document, DocumentChunk
 
@@ -425,6 +647,7 @@ class TestDocumentUpload:
                 "source": "document",
                 "document_id": doc.id,
                 "chunk_index": 1,
+                "index_generation": 1,
             }},
         )]
         assert bm25.added == [((test_tenant.slug, chunk.id, chunk.content), {})]

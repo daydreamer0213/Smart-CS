@@ -6,6 +6,7 @@ from app.core.parsing.contracts import KnowledgeChunk, ParsedDocument, ParsedEle
 
 
 MAX_TOKENS = 800
+CHUNKER_VERSION = "structured-v1"
 _ENCODING = tiktoken.get_encoding("cl100k_base")
 
 

@@ -30,10 +30,10 @@
 - Consumes: verified SC-05 outputs and `video-manifest.json`.
 - Produces: an archive with unchanged hashes and no SC-05 assets in formal `masters` or `exports` directories.
 
-- [ ] Move the master, web export, poster, captions, keyframes, and video manifest into the dated archive directory without deleting them.
-- [ ] Verify the four hashed outputs still match `video-manifest.json`.
-- [ ] Confirm the source runtime logs, RAG report, and narrative slide references remain in the E3 run directory.
-- [ ] Update the active plan and design notes so the video cannot be mistaken for an approved handoff asset.
+- [x] Move the master, web export, poster, captions, keyframes, and video manifest into the dated archive directory without deleting them.
+- [x] Verify the four hashed outputs still match `video-manifest.json`.
+- [x] Confirm the source runtime logs, RAG report, and narrative slide references remain in the E3 run directory.
+- [x] Update the active plan and design notes so the video cannot be mistaken for an approved handoff asset.
 
 ### Task 2: Generate Four Responsive Content Modules
 
@@ -48,12 +48,12 @@
 - Consumes: validated E1 manifest, `project-facts.json`, and six evidence-backed claims.
 - Produces: `portfolio-modules.json` with exactly four ordered modules and direct factual page copy.
 
-- [ ] Extend the existing output-contract test to require `portfolio-modules.json` and assert module IDs `overview`, `knowledge-governance`, `agent-boundary`, and `engineering-quality`.
-- [ ] Assert every module has a title, summary, claim IDs, evidence-backed proof items, mobile presentation guidance, alt text, and a visible limitation.
-- [ ] Add a copy-style regression assertion that rejects repeated contrast-formula phrases from generated page copy and module headings.
-- [ ] Implement the minimal generator changes, reusing existing facts and claim references rather than duplicating evidence parsing.
-- [ ] Run `python -m pytest tests/test_build_portfolio_handoff.py -q` and confirm all handoff tests pass.
-- [ ] Regenerate the materials directory from `D:\DevData\smartcs\portfolio-evidence\manifest.json`.
+- [x] Extend the existing output-contract test to require `portfolio-modules.json` and assert module IDs `overview`, `knowledge-governance`, `agent-boundary`, and `engineering-quality`.
+- [x] Assert every module has a title, summary, claim IDs, evidence-backed proof items, mobile presentation guidance, alt text, and a visible limitation.
+- [x] Add a copy-style regression assertion that rejects repeated contrast-formula phrases from generated page copy and module headings.
+- [x] Implement the minimal generator changes, reusing existing facts and claim references rather than duplicating evidence parsing.
+- [x] Run `python -m pytest tests/test_build_portfolio_handoff.py -q` and confirm all handoff tests pass.
+- [x] Regenerate the materials directory from `D:\DevData\smartcs\portfolio-evidence\manifest.json`.
 
 ### Task 3: Produce And Validate The Final Handoff Contract
 
@@ -67,11 +67,11 @@
 - Consumes: generated facts, claims, module contract, and relative visual-reference identifiers.
 - Produces: a single handoff contract for portfolio task `019f59c1-a1ab-7820-a310-ff2365afaee8`.
 
-- [ ] Add contract assertions for module order, source commit, data classification, relative material paths, prohibited claims, archived-video exclusion, and frontend ownership.
-- [ ] Generate a concise Markdown integration guide covering desktop composition, mobile stacking, semantic headings, accessible metric labels, and evidence-link handling.
-- [ ] Generate `handoff.json` without absolute local paths, credentials, tokens, HTML, or CSS.
-- [ ] Scan all generated text for sensitive keys, absolute local paths, replacement characters, and prohibited AI-template phrases.
-- [ ] Run the focused handoff tests and then the full `python -m pytest -q` suite.
+- [x] Add contract assertions for module order, source commit, data classification, relative material paths, prohibited claims, archived-video exclusion, and frontend ownership.
+- [x] Generate a concise Markdown integration guide covering desktop composition, mobile stacking, semantic headings, accessible metric labels, and evidence-link handling.
+- [x] Generate `handoff.json` without absolute local paths, credentials, tokens, HTML, or CSS.
+- [x] Scan all generated text for sensitive keys, absolute local paths, replacement characters, and prohibited AI-template phrases.
+- [x] Run the focused handoff tests and then the full `python -m pytest -q` suite.
 
 ### Task 4: Transfer And Verify Portfolio Integration
 

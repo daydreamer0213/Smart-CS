@@ -99,16 +99,12 @@
 
 ## E3: Build And Verify The Runtime Evidence Film
 
-**Status:** Completed on 2026-07-20 from commit `7cac65dff553386990fcda379e30bbc96b1db3af`.
+**Status:** Completed and archived after user review on 2026-07-20. The film is not an approved portfolio handoff asset.
 
-**Generated media:**
+**Archived media:**
 
-- `D:\DevData\smartcs\portfolio-evidence\masters\SC-05.mp4`
-- `D:\DevData\smartcs\portfolio-evidence\exports\SC-05.mp4`
-- `D:\DevData\smartcs\portfolio-evidence\exports\SC-05-poster.webp`
-- `D:\DevData\smartcs\portfolio-evidence\exports\SC-05.zh-CN.srt`
-- selected real keyframes under `exports\keyframes\`
-- verification manifest under the isolated E3 run directory
+- `D:\DevData\smartcs\portfolio-evidence\archive\2026-07-20-sc-05-video`
+- The verified runtime logs, retrieval report, and reusable slide references remain in the isolated E3 run directory.
 
 ### Presentation boundary
 
@@ -146,9 +142,10 @@
 
 ### Review and handoff
 
-- [ ] Present the neutral materials, real video, poster, and keyframes for user review.
-- [ ] Apply only approved factual or wording corrections; do not change measured numbers or state order.
-- [ ] Write the final contract with project positioning, approved claims, asset paths, alt text, aspect ratios, source commit, hashes, metrics, limitations, and prohibited claims.
+- [ ] Replace the video-first handoff with four responsive content modules: overview, knowledge governance and citation, controlled Agent action and tenant boundary, engineering quality and limitations.
+- [ ] Rewrite contrast-heavy copy such as "not X, but Y" into direct factual statements.
+- [ ] Write the final contract with module order, approved copy, evidence references, source commit, metrics, limitations, and prohibited claims.
+- [ ] Do not hand off the archived video, video poster, or video keyframes as required portfolio assets.
 - [ ] Send the structured contract to portfolio task `019f59c1-a1ab-7820-a310-ff2365afaee8` only when the user says its frontend is ready.
 - [ ] Run final branch verification and present merge/push options.
 

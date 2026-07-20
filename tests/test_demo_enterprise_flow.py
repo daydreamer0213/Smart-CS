@@ -1,3 +1,4 @@
+import json
 import secrets
 
 import pytest
@@ -70,6 +71,11 @@ def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch, capsys):
     ])
 
     chats = list(chats)
+    chats[0]["sources"].append({
+        "source_id": "doc-1",
+        "title": None,
+        "page_start": None,
+    })
     chats[0]["sources"][0].update({
         "source_type": "document",
         "title": "Annual Leave Policy",
@@ -160,6 +166,14 @@ def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch, capsys):
     assert any(path.endswith("/hr-support/me") for path in paths)
     assert demo._demo_password() == "generated-at-runtime"
     output = capsys.readouterr().out
+    summaries = [
+        json.loads(line)
+        for line in output.splitlines()
+        if line.startswith("{")
+    ]
+    cited_summary = next(summary for summary in summaries if summary.get("status") == "cited")
+    assert cited_summary["reply"].endswith("[source:doc-1]")
+    assert cited_summary["sources"][1] == {"source_id": "doc-1"}
     assert "[source:doc-1]" in output
     assert '"reply":' in output
     assert '"source_type": "document"' in output
@@ -169,6 +183,8 @@ def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch, capsys):
     assert '"page_end": 2' in output
     assert '"section_path": ["Annual Leave"]' in output
     assert '"element_types": ["paragraph"]' in output
+    assert '"excerpt"' not in output
+    assert '"path"' not in output
     assert "must-not-be-exported" not in output
     assert '"score"' not in output
     assert '"token"' not in output

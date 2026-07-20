@@ -238,7 +238,24 @@ def main() -> int:
     )
     _require_live_chat(status, "policy question")
     _require_cited_answer(policy_chat)
-    _show_summary(source_ids=[source.get("source_id") for source in policy_chat["sources"]], status="cited")
+    citation_fields = (
+        "source_type",
+        "source_id",
+        "title",
+        "page_start",
+        "page_end",
+        "section_path",
+        "element_types",
+    )
+    safe_sources = [
+        {
+            field: source[field]
+            for field in citation_fields
+            if field in source and source[field] is not None
+        }
+        for source in policy_chat.get("sources", [])
+    ]
+    _show_summary(reply=policy_chat.get("reply"), sources=safe_sources, status="cited")
 
     _print_step("Reindex the current policy without service interruption")
     status, rebuilt = _request(

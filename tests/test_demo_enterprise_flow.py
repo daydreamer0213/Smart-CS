@@ -69,6 +69,22 @@ def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch, capsys):
         {"reply": "已准备待确认的 HR 支持请求", "sources": [{"source_id": "doc-1"}], "pending_handoff": {"id": "draft-1", "status": "pending"}},
     ])
 
+    chats = list(chats)
+    chats[0]["sources"][0].update({
+        "source_type": "document",
+        "title": "Annual Leave Policy",
+        "excerpt": "must-not-be-exported",
+        "score": 0.91,
+        "page_start": 2,
+        "page_end": 2,
+        "section_path": ["Annual Leave"],
+        "element_types": ["paragraph"],
+        "token": "must-not-be-exported",
+        "storage_key": "must-not-be-exported",
+        "path": "D:\\DevData\\smartcs\\private.pdf",
+    })
+    chats = iter(chats)
+
     def fake_request(method, path, **kwargs):
         calls.append((method, path, kwargs))
         if path == "/health":
@@ -144,6 +160,18 @@ def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch, capsys):
     assert any(path.endswith("/hr-support/me") for path in paths)
     assert demo._demo_password() == "generated-at-runtime"
     output = capsys.readouterr().out
+    assert "[source:doc-1]" in output
+    assert '"reply":' in output
+    assert '"source_type": "document"' in output
+    assert '"source_id": "doc-1"' in output
+    assert '"title": "Annual Leave Policy"' in output
+    assert '"page_start": 2' in output
+    assert '"page_end": 2' in output
+    assert '"section_path": ["Annual Leave"]' in output
+    assert '"element_types": ["paragraph"]' in output
+    assert "must-not-be-exported" not in output
+    assert '"score"' not in output
+    assert '"token"' not in output
     assert "owner-token" not in output
     assert "employee-token" not in output
     assert "storage_key" not in output

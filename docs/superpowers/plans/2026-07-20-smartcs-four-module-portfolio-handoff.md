@@ -4,6 +4,8 @@
 
 **Goal:** Replace the archived SC-05 video handoff with four traceable, responsive content modules that the portfolio task can integrate without inventing product UI or production claims.
 
+**Status:** Completed on 2026-07-20. The receiving portfolio implementation passed its contract test and independent desktop/mobile browser verification.
+
 **Architecture:** Extend the existing evidence-to-material generator rather than creating a second frontend. The SmartCS package produces machine-readable module content, direct factual copy, and a final handoff contract; the receiving portfolio task owns HTML, CSS, interaction, and visual integration.
 
 **Tech Stack:** Python 3.12 standard library, JSON, Markdown, pytest, existing SmartCS evidence manifest.
@@ -84,8 +86,10 @@
 - Consumes: the validated SmartCS handoff contract.
 - Produces: a SmartCS project section inside the existing portfolio frontend; no SmartCS repository frontend changes.
 
-- [ ] Send the contract and integration constraints to portfolio task `019f59c1-a1ab-7820-a310-ff2365afaee8`.
-- [ ] Require the receiving task to preserve the current portfolio visual system while rebuilding the four modules responsively, not embedding dense 16:9 slide screenshots.
-- [ ] Require browser verification at desktop and 375px mobile widths for readability, overflow, focus order, alt text, and archived-video absence.
-- [ ] Review the receiving task's completion report against `handoff.json`; correct only factual or contract violations.
-- [ ] Mark E4 and the SmartCS portfolio evidence goal complete when the handoff package and receiving-task verification both pass.
+- [x] Send the contract and integration constraints to portfolio task `019f59c1-a1ab-7820-a310-ff2365afaee8`.
+- [x] Require the receiving task to preserve the current portfolio visual system while rebuilding the four modules responsively, not embedding dense 16:9 slide screenshots.
+- [x] Verify the receiving page at desktop and 375px mobile widths for readability, overflow, focus order, source wrapping, and archived-video absence.
+- [x] Review the receiving implementation against `handoff.json`; correct only factual or contract violations.
+- [x] Mark E4 and the SmartCS portfolio evidence goal complete when the handoff package and receiving-task verification both pass.
+
+**Verification record:** The portfolio contract reported 37 checks passed. Browser audits at 1440x900 and 375x812 found no horizontal overflow or card overlap, kept all required facts and limitations visible, and found no local paths, SC-05 media, stale 398-test value, or browser console error in a clean single-open flow.

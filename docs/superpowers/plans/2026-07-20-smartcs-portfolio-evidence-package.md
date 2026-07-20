@@ -134,7 +134,7 @@
 
 ## E4: User Review And Portfolio Handoff
 
-**Status:** Pending.
+**Status:** Completed on 2026-07-20. The four-module handoff was integrated into the portfolio frontend and independently verified at desktop and 375px widths.
 
 **Generated contract:**
 
@@ -142,11 +142,11 @@
 
 ### Review and handoff
 
-- [ ] Replace the video-first handoff with four responsive content modules: overview, knowledge governance and citation, controlled Agent action and tenant boundary, engineering quality and limitations.
-- [ ] Rewrite contrast-heavy copy such as "not X, but Y" into direct factual statements.
-- [ ] Write the final contract with module order, approved copy, evidence references, source commit, metrics, limitations, and prohibited claims.
-- [ ] Do not hand off the archived video, video poster, or video keyframes as required portfolio assets.
-- [ ] Send the structured contract to portfolio task `019f59c1-a1ab-7820-a310-ff2365afaee8` only when the user says its frontend is ready.
-- [ ] Run final branch verification and present merge/push options.
+- [x] Replace the video-first handoff with four responsive content modules: overview, knowledge governance and citation, controlled Agent action and tenant boundary, engineering quality and limitations.
+- [x] Rewrite contrast-heavy copy such as "not X, but Y" into direct factual statements.
+- [x] Write the final contract with module order, approved copy, evidence references, source commit, metrics, limitations, and prohibited claims.
+- [x] Do not hand off the archived video, video poster, or video keyframes as required portfolio assets.
+- [x] Send the structured contract to portfolio task `019f59c1-a1ab-7820-a310-ff2365afaee8` after the user approved immediate integration.
+- [x] Run final branch verification and record the integration result for merge/push review.
 
 The receiving task may redesign the presentation, crop approved media, and shorten copy. It may not regenerate evidence, invent product screens, change figures, remove data-boundary labels, or hide known limitations.

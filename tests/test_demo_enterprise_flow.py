@@ -171,6 +171,16 @@ def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch, capsys):
         for line in output.splitlines()
         if line.startswith("{")
     ]
+
+    def collect_strings(value):
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, dict):
+            value = value.values()
+        elif not isinstance(value, list):
+            return []
+        return [item for nested in value for item in collect_strings(nested)]
+
     cited_summary = next(summary for summary in summaries if summary.get("status") == "cited")
     assert cited_summary["reply"].endswith("[source:doc-1]")
     assert cited_summary["sources"][1] == {"source_id": "doc-1"}
@@ -189,6 +199,9 @@ def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch, capsys):
     assert '"score"' not in output
     assert '"token"' not in output
     assert "owner-token" not in output
+    assert "admin-token" not in output
     assert "employee-token" not in output
+    assert "other-token" not in output
+    assert '"access_token"' not in output
     assert "storage_key" not in output
-    assert "D:\\DevData" not in output
+    assert "D:\\DevData\\smartcs\\private.pdf" not in collect_strings(summaries)

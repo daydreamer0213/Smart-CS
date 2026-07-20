@@ -1,226 +1,153 @@
 # SmartCS Portfolio Evidence Package Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Scope correction (2026-07-20):** SmartCS produces traceable project materials. The portfolio task owns page layout, styling, interaction, and final presentation. This plan does not create a second frontend.
 
-**Goal:** Produce a traceable, redacted SmartCS evidence package that can be reviewed independently and later handed to the portfolio frontend.
+**Goal:** Produce a redacted, independently verifiable SmartCS material package and hand it to the portfolio task without inventing product UI or production claims.
 
-**Architecture:** Run the existing SmartCS application against a fresh D-drive database and fictional HR data, preserve sanitized raw outputs, then render a dependency-free static evidence page from an explicit manifest. Screenshots and video are exports of that page and the same live run; no new SmartCS product feature or second frontend is introduced.
+**Architecture:** Run SmartCS against fresh fictional HR data, preserve sanitized raw evidence, validate it with SHA-256 hashes, and derive neutral JSON/Markdown materials. A later live recording supplies real visual frames. The receiving portfolio task consumes the facts and media but controls all frontend presentation.
 
-**Tech Stack:** Python 3.11, FastAPI, Alembic, pytest, PowerShell, static HTML/CSS, Playwright/browser capture, FFmpeg only if already available.
+**Tech Stack:** Python 3.11, FastAPI, Alembic, pytest, PowerShell, standard-library JSON/Markdown generation, FFmpeg only if already available.
 
 ## Global Constraints
 
-- Store generated evidence, databases, logs, screenshots, and video under `D:\DevData\smartcs\portfolio-evidence`; do not place large generated assets on `C:`.
+- Keep generated evidence, databases, logs, screenshots, and video under `D:\DevData\smartcs\portfolio-evidence`.
 - Use only fictional Beichen Technology data and `example.com` or `example.test` identities.
-- Never record or export API keys, JWTs, passwords, cookies, authorization headers, `.env` contents, `storage_key`, physical document paths, or unrelated desktop windows.
-- Every visible status and metric must come from a real run at one recorded Git commit.
-- A live policy answer without both structured sources and a `[source:<id>]` token invalidates SC-02 for that run.
-- Keep the recorded M2-5 limitations visible: curated corpus, HashEmbedding is non-semantic, BM25 contribution 11, vector contribution 0, and `payroll-contact` is the retained failure.
-- Do not add an HRIS integration, Agent tool, SmartCS frontend, portfolio frontend dependency, or visual framework.
+- Never export API keys, JWTs, passwords, cookies, authorization headers, `.env` contents, storage keys, physical document paths, or unrelated desktop windows.
+- Every public claim must identify its source Git commit, manifest pointer, or hashed raw evidence file.
+- A policy answer without a structured source and matching `[source:<id>]` token is not valid cited-answer evidence.
+- Keep visible limitations: curated corpus, HashEmbedding is non-semantic, BM25 contribution 11, vector contribution 0, and `payroll-contact` is the retained failure.
+- Do not add an HRIS integration, Agent tool, SmartCS frontend, portfolio frontend dependency, visual framework, or generated product screenshot.
 - Preserve existing user changes in the main worktree; implementation runs in `codex/portfolio-evidence-package`.
 
 ---
 
-### Task 1: E1 Reproduce And Collect Raw Evidence
+## E1: Reproduce And Collect Raw Evidence
 
-**Files:**
-- Modify: `scripts/demo_enterprise_flow.py`
-- Test: `tests/test_demo_enterprise_flow.py`
-- Read: `scripts/demo_enterprise_flow.py`
-- Read: `scripts/evaluate_rag_retrieval.py`
-- Read: `docs/operations/local-hr-agent-demo.md`
-- Create outside Git: `D:\DevData\smartcs\portfolio-evidence\raw\<run-id>\*`
-- Create outside Git: `D:\DevData\smartcs\portfolio-evidence\manifest.json`
+**Status:** Complete.
 
-**Interfaces:**
-- Consumes: the committed SmartCS API, fictional fixtures, configured chat and embedding providers.
-- Produces: sanitized demo output, RAG report, pytest output, run metadata, and source paths used by later tasks.
+**Git files:**
 
-- [ ] **Step 1: Verify configuration without printing secret values**
+- `scripts/demo_enterprise_flow.py`
+- `tests/test_demo_enterprise_flow.py`
 
-Check only whether required values are non-empty and record the non-secret model identifiers. Stop if the model or embedding configuration is incomplete.
+**Generated evidence:**
 
-- [ ] **Step 2: Create a fresh evidence run directory on D:**
+- `D:\DevData\smartcs\portfolio-evidence\raw\20260720T072602Z-12c374a\*`
+- `D:\DevData\smartcs\portfolio-evidence\manifest.json`
 
-Create `raw\<UTC timestamp>-<commit7>` with subdirectories for the database, Chroma data, logs, and command output.
+**Observed acceptance evidence:**
 
-- [ ] **Step 3: Initialize a fresh database**
-
-Run:
-
-```powershell
-python -m alembic upgrade head
-```
-
-Expected: exit code 0 against the evidence run database.
-
-- [ ] **Step 4: Start SmartCS and verify health**
-
-Run Uvicorn on an unused localhost port with all generated paths redirected to the evidence run directory. Verify `/health` returns HTTP 200.
-
-- [ ] **Step 5: Run the existing enterprise demo**
-
-Before the evidence run, add one TDD-protected safe summary for the cited answer. The summary may include only `reply` and the source fields `source_type`, `source_id`, `title`, `page_start`, `page_end`, `section_path`, and `element_types`; it must exclude `excerpt`, credentials, storage keys, and physical paths. Run `python -m pytest tests/test_demo_enterprise_flow.py -q` red then green.
-
-Run:
-
-```powershell
-python scripts\demo_enterprise_flow.py
-```
-
-Expected: exit code 0, a cited policy answer, governed document states, confirmed HR handoff lifecycle, and cross-tenant denial. Save stdout and stderr separately, then scan both for forbidden secret patterns.
-
-- [ ] **Step 6: Run the deterministic retrieval evaluation**
-
-Run `scripts\evaluate_rag_retrieval.py` with its fixed fixtures and write the JSON report into the run directory. Verify the report schema, metric counts, contribution counts, and retained failure query instead of copying old documentation values.
-
-- [ ] **Step 7: Run the fresh full regression suite**
-
-Run:
-
-```powershell
-python -m pytest -q
-```
-
-Expected: exit code 0. Preserve the exact summary and warnings in the raw run directory.
-
-- [ ] **Step 8: Write and validate the manifest**
-
-Record run ID, Git commit, capture time, commands, relative raw source paths, extracted conclusions, required limitations, and SHA-256 hashes. Reject absolute user-profile paths and any secret-like values.
-
-- [ ] **Step 9: Stop the local service and report E1**
-
-Confirm no evidence process remains running. Report the observed results and any failed evidence item; do not advance to E2 until E1 is valid.
+- [x] Fresh Alembic database initialized on D drive.
+- [x] SmartCS health returned HTTP 200.
+- [x] Enterprise demo produced governed upload, approved current snapshot, cited answer, reindex generation, HR handoff lifecycle, and cross-tenant 403.
+- [x] Retrieval gate passed with Recall@3 91.67%, MRR 91.67%, recalled-source provenance 100%, BM25 11, vector 0, and retained failure `payroll-contact`.
+- [x] Clean full regression completed with 396 passed, 4 skipped, 1 warning, and 0 failed.
+- [x] Raw outputs were sanitized, hashed, and indexed in the manifest.
+- [x] Local services were stopped after collection.
 
 ---
 
-### Task 2: E2 Build A Minimal Static Evidence Renderer
+## E2: Build And Verify Neutral Materials
 
-**Files:**
-- Create: `scripts/build_portfolio_evidence.py`
-- Test: `tests/test_build_portfolio_evidence.py`
-- Create outside Git: `D:\DevData\smartcs\portfolio-evidence\masters\index.html`
+**Status:** Complete.
 
-**Interfaces:**
-- Consumes: `manifest.json` from Task 1.
-- Produces: one self-contained static HTML document containing SC-01 through SC-04 as independently capturable sections.
+**Git files:**
 
-- [ ] **Step 1: Write failing tests for manifest validation and safe rendering**
+- Create: `scripts/build_portfolio_handoff.py`
+- Create: `tests/test_build_portfolio_handoff.py`
+- Modify: this plan only; do not modify the portfolio frontend.
 
-Cover required evidence IDs, source hashes, the cited-answer gate, visible limitations, HTML escaping, and rejection of secret-like keys or local user-profile paths.
+**Generated materials:**
 
-- [ ] **Step 2: Run the focused test and confirm RED**
+- `D:\DevData\smartcs\portfolio-evidence\materials\README.md`
+- `D:\DevData\smartcs\portfolio-evidence\materials\project-facts.json`
+- `D:\DevData\smartcs\portfolio-evidence\materials\claims.json`
+- `D:\DevData\smartcs\portfolio-evidence\materials\portfolio-copy.md`
 
-Run:
+### Material contract
 
-```powershell
-python -m pytest tests/test_build_portfolio_evidence.py -q
-```
+`project-facts.json` contains machine-readable positioning, capabilities, metrics, regression results, data boundary, source commit, and limitations.
 
-Expected: failure because `scripts.build_portfolio_evidence` does not exist.
+`claims.json` contains six approved claim candidates. Each item has:
 
-- [ ] **Step 3: Implement the smallest standard-library renderer**
+- stable claim ID;
+- factual claim;
+- business value;
+- manifest pointer or hashed raw evidence reference;
+- explicit limitation.
 
-Use `json`, `html`, `pathlib`, and `hashlib`; add no package. Generate neutral responsive HTML/CSS with fixed board dimensions, print-safe sections, public-demo labels, and no JavaScript dependency.
+`portfolio-copy.md` contains one-line positioning, project introduction, resume bullets, interview explanation, approved metrics, and prohibited claims. It is copy material, not final page copy.
 
-- [ ] **Step 4: Run the focused test and confirm GREEN**
+### Verification steps
 
-Run the focused test again and require exit code 0.
+- [x] Write a failing test before the generator exists.
+- [x] Implement the smallest standard-library generator; add no dependency.
+- [x] Reject unsafe citations, sensitive field names, local paths, missing files, and changed source hashes.
+- [x] Generate all four neutral material files from the approved E1 manifest.
+- [x] Scan generated files for credentials and local absolute paths.
+- [x] Review every claim against the raw demo, retrieval report, and pytest output.
+- [x] Run focused and full regression suites.
+- [x] Commit the E2 generator, tests, and corrected plan.
 
-- [ ] **Step 5: Render from the approved E1 manifest**
+### Explicit non-deliverables
 
-Write the self-contained HTML into `masters`, keeping all figures and statuses identical to the manifest.
-
-- [ ] **Step 6: Commit the renderer and tests**
-
-Commit only source and tests; do not commit generated evidence, secrets, databases, Chroma files, or videos.
-
----
-
-### Task 3: E2 Export And Visually Verify SC-01 Through SC-04
-
-**Files:**
-- Read outside Git: `D:\DevData\smartcs\portfolio-evidence\masters\index.html`
-- Create outside Git: `D:\DevData\smartcs\portfolio-evidence\masters\SC-01.png` through `SC-04.png`
-- Create outside Git: `D:\DevData\smartcs\portfolio-evidence\exports\SC-01.webp` through `SC-04.webp`
-
-**Interfaces:**
-- Consumes: the static evidence page from Task 2.
-- Produces: desktop masters and web exports tied to manifest evidence IDs.
-
-- [ ] **Step 1: Open the page in a browser and inspect each board**
-
-Verify 1600px desktop boards and mobile reading at 390px. Check overflow, overlap, text clipping, contrast, and that each board states one main conclusion.
-
-- [ ] **Step 2: Export exact board captures**
-
-Capture SC-01 and SC-04 at 1600x900; capture SC-02 and SC-03 at 1600x1000. Preserve PNG masters and create WebP exports.
-
-- [ ] **Step 3: Compare exports against raw evidence**
-
-Validate every metric, state, short ID, and limitation against the manifest and raw source files. Re-run the secret/path scan over HTML metadata and exported filenames.
-
-- [ ] **Step 4: Run focused and full tests**
-
-Run the renderer test followed by `python -m pytest -q` before declaring E2 complete.
+- No HTML, CSS, React component, page route, dashboard mockup, or visual design system.
+- No claim that an evidence diagram is a SmartCS product screenshot.
+- Draft evidence-board images created before this correction are not part of the approved handoff.
 
 ---
 
-### Task 4: E3 Record And Verify The Short Demo
+## E3: Record And Verify The Real Demo
 
-**Files:**
-- Create outside Git: `D:\DevData\smartcs\portfolio-evidence\masters\SC-05.mp4`
-- Create outside Git: `D:\DevData\smartcs\portfolio-evidence\exports\SC-05.mp4`
-- Create outside Git: `D:\DevData\smartcs\portfolio-evidence\exports\SC-05-poster.webp`
+**Status:** Pending.
 
-**Interfaces:**
-- Consumes: one fresh successful run matching the approved evidence boundary.
-- Produces: a 60-90 second 1920x1080 master, web encode, poster, and Chinese captions.
+**Generated media:**
 
-- [ ] **Step 1: Prepare a capture-only desktop**
+- `D:\DevData\smartcs\portfolio-evidence\masters\SC-05.mp4`
+- `D:\DevData\smartcs\portfolio-evidence\exports\SC-05.mp4`
+- `D:\DevData\smartcs\portfolio-evidence\exports\SC-05-poster.webp`
+- selected real keyframes under `exports\keyframes\`
 
-Show only the SmartCS/API/evidence surfaces required by the storyboard. Hide terminals containing environment variables and all unrelated applications.
+### Recording boundary
 
-- [ ] **Step 2: Record one real successful lifecycle**
+- Record only actual SmartCS/API behavior required by the storyboard.
+- Keep terminals containing environment variables and unrelated applications out of frame.
+- Show the public fictional data label and never show credentials, authorization headers, local user paths, or private material.
+- Trim idle time and add factual captions only; do not recreate API responses, cursor movement, or citations.
 
-Capture health, identity boundary, upload and review, cited answer, reindex generation, handoff confirmation and resolution, tenant 403, and evaluation summary in the approved order.
+### Required lifecycle
 
-- [ ] **Step 3: Trim and caption without altering evidence**
+1. Service health and fictional tenant context.
+2. Document upload resulting in `ready + pending_review`.
+3. Owner review resulting in `approved + current`.
+4. Employee question with matching structured source and `[source:<id>]` token.
+5. Reindex generation switch.
+6. Handoff draft, employee confirmation, open, assigned, resolved.
+7. Cross-tenant 403 and retrieval-evaluation summary.
 
-Only trim idle time and add short title/caption cards. Do not recreate cursor movement, replace API output, or insert a citation absent from the live result.
+### Acceptance
 
-- [ ] **Step 4: Verify representative frames and metadata**
-
-Inspect beginning, each transition, and ending frames for secrets, user paths, unrelated windows, clipping, blank frames, and readable captions. Verify duration, dimensions, codec, and file size.
+- [ ] 60-90 second 1920x1080 master recorded from one valid run.
+- [ ] Web encode, poster, and selected real keyframes produced.
+- [ ] Representative frames inspected for secrets, paths, unrelated windows, clipping, blank frames, and caption readability.
+- [ ] Duration, dimensions, codec, file size, and SHA-256 recorded.
 
 ---
 
-### Task 5: E4 Review And Portfolio Handoff
+## E4: User Review And Portfolio Handoff
 
-**Files:**
-- Create outside Git: `D:\DevData\smartcs\portfolio-evidence\handoff.json`
-- Modify: `docs/superpowers/specs/2026-07-20-smartcs-portfolio-evidence-package-design.md` only if the user approves wording changes.
+**Status:** Pending.
 
-**Interfaces:**
-- Consumes: approved SC-01 through SC-05 exports and their manifest records.
-- Produces: a portfolio-ready handoff contract; the portfolio task remains the only consumer that changes its frontend.
+**Generated contract:**
 
-- [ ] **Step 1: Present all exports locally for user review**
+- `D:\DevData\smartcs\portfolio-evidence\handoff.json`
 
-Include one-line purpose, dimensions, source commit, and limitations for each asset.
+### Review and handoff
 
-- [ ] **Step 2: Apply only approved evidence wording corrections**
+- [ ] Present the neutral materials, real video, poster, and keyframes for user review.
+- [ ] Apply only approved factual or wording corrections; do not change measured numbers or state order.
+- [ ] Write the final contract with project positioning, approved claims, asset paths, alt text, aspect ratios, source commit, hashes, metrics, limitations, and prohibited claims.
+- [ ] Send the structured contract to portfolio task `019f59c1-a1ab-7820-a310-ff2365afaee8` only when the user says its frontend is ready.
+- [ ] Run final branch verification and present merge/push options.
 
-Do not alter measured numbers, state order, failure samples, or boundary claims.
-
-- [ ] **Step 3: Write the handoff contract**
-
-Include project name, one-line positioning, ordering, approved asset paths, alt text, aspect ratios, source commit, verification metrics, limitations, and prohibited claims.
-
-- [ ] **Step 4: Send the structured handoff to portfolio task `019f59c1-a1ab-7820-a310-ff2365afaee8`**
-
-Wait until the user says the portfolio frontend is ready. The receiving task may crop or scale approved exports but may not regenerate evidence or change figures.
-
-- [ ] **Step 5: Final branch verification and integration**
-
-Run the full test suite, perform whole-branch review, and present merge/push options. Generated raw evidence and large media remain outside Git.
+The receiving task may redesign the presentation, crop approved media, and shorten copy. It may not regenerate evidence, invent product screens, change figures, remove data-boundary labels, or hide known limitations.

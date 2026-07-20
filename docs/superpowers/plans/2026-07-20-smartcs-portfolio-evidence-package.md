@@ -24,6 +24,8 @@
 ### Task 1: E1 Reproduce And Collect Raw Evidence
 
 **Files:**
+- Modify: `scripts/demo_enterprise_flow.py`
+- Test: `tests/test_demo_enterprise_flow.py`
 - Read: `scripts/demo_enterprise_flow.py`
 - Read: `scripts/evaluate_rag_retrieval.py`
 - Read: `docs/operations/local-hr-agent-demo.md`
@@ -57,6 +59,8 @@ Expected: exit code 0 against the evidence run database.
 Run Uvicorn on an unused localhost port with all generated paths redirected to the evidence run directory. Verify `/health` returns HTTP 200.
 
 - [ ] **Step 5: Run the existing enterprise demo**
+
+Before the evidence run, add one TDD-protected safe summary for the cited answer. The summary may include only `reply` and the source fields `source_type`, `source_id`, `title`, `page_start`, `page_end`, `section_path`, and `element_types`; it must exclude `excerpt`, credentials, storage keys, and physical paths. Run `python -m pytest tests/test_demo_enterprise_flow.py -q` red then green.
 
 Run:
 

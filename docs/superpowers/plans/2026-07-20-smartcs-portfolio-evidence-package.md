@@ -97,23 +97,25 @@
 
 ---
 
-## E3: Record And Verify The Real Demo
+## E3: Build And Verify The Runtime Evidence Film
 
-**Status:** Pending.
+**Status:** Completed on 2026-07-20 from commit `7cac65dff553386990fcda379e30bbc96b1db3af`.
 
 **Generated media:**
 
 - `D:\DevData\smartcs\portfolio-evidence\masters\SC-05.mp4`
 - `D:\DevData\smartcs\portfolio-evidence\exports\SC-05.mp4`
 - `D:\DevData\smartcs\portfolio-evidence\exports\SC-05-poster.webp`
+- `D:\DevData\smartcs\portfolio-evidence\exports\SC-05.zh-CN.srt`
 - selected real keyframes under `exports\keyframes\`
+- verification manifest under the isolated E3 run directory
 
-### Recording boundary
+### Presentation boundary
 
-- Record only actual SmartCS/API behavior required by the storyboard.
-- Keep terminals containing environment variables and unrelated applications out of frame.
-- Show the public fictional data label and never show credentials, authorization headers, local user paths, or private material.
-- Trim idle time and add factual captions only; do not recreate API responses, cursor movement, or citations.
+- Present only facts extracted from a successful SmartCS API run and fresh retrieval evaluation.
+- Use a neutral evidence narrative instead of a terminal recording or invented product UI.
+- Show the public fictional data label and never show credentials, authorization headers, local paths, or private material.
+- Preserve measured states, response text, citation IDs, metrics, and limitations; do not recreate or improve runtime results.
 
 ### Required lifecycle
 
@@ -127,10 +129,10 @@
 
 ### Acceptance
 
-- [ ] 60-90 second 1920x1080 master recorded from one valid run.
-- [ ] Web encode, poster, and selected real keyframes produced.
-- [ ] Representative frames inspected for secrets, paths, unrelated windows, clipping, blank frames, and caption readability.
-- [ ] Duration, dimensions, codec, file size, and SHA-256 recorded.
+- [x] 79-second 1920x1080 master built from one valid run and labeled as a runtime evidence replay.
+- [x] H.264 `yuv420p` web encode, AAC audio track, Chinese subtitle track, poster, and eight real keyframes produced.
+- [x] Representative frames inspected for secrets, paths, clipping, blank frames, and caption readability.
+- [x] Duration, dimensions, codecs, file sizes, source/output SHA-256 values, and source commit recorded.
 
 ---
 

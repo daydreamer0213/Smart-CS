@@ -317,6 +317,7 @@ def main() -> int:
     _require(status, {200}, "assign handoff")
     if assigned.get("status") != "assigned":
         raise DemoFailure("handoff assignment did not reach assigned state")
+    _show_summary(handoff_id=handoff_id, status=assigned["status"])
 
     status, resolved = _request(
         "PATCH",

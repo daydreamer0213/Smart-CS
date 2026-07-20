@@ -171,6 +171,12 @@ def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch, capsys):
         for line in output.splitlines()
         if line.startswith("{")
     ]
+    handoff_statuses = [
+        summary["status"]
+        for summary in summaries
+        if summary.get("handoff_id") == "handoff-1"
+    ]
+    assert handoff_statuses == ["open", "assigned", "resolved", "resolved"]
 
     def collect_strings(value):
         if isinstance(value, str):

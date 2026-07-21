@@ -66,7 +66,12 @@ def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch, capsys):
         {"access_token": "other-token", "user": {"id": "other-owner-1"}},
     ])
     chats = iter([
-        {"reply": "年假制度说明 [source:doc-1]", "sources": [{"source_id": "doc-1"}], "pending_handoff": None},
+        {
+            "reply": "年假制度说明 [source:doc-1]",
+            "display_reply": "年假制度说明 来源：《北辰科技年假制度》",
+            "sources": [{"source_id": "doc-1"}],
+            "pending_handoff": None,
+        },
         {"reply": "已准备待确认的 HR 支持请求", "sources": [{"source_id": "doc-1"}], "pending_handoff": {"id": "draft-1", "status": "pending"}},
     ])
 
@@ -78,7 +83,7 @@ def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch, capsys):
     })
     chats[0]["sources"][0].update({
         "source_type": "document",
-        "title": "Annual Leave Policy",
+        "title": "北辰科技年假制度",
         "excerpt": "must-not-be-exported",
         "score": 0.91,
         "page_start": 2,
@@ -99,6 +104,8 @@ def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch, capsys):
             assert kwargs["json_body"]["password"] == "generated-at-runtime"
             return 201, next(registrations)
         if path.endswith("/documents/upload"):
+            assert b'name="family_name"' in kwargs["data"]
+            assert "北辰科技年假制度".encode("utf-8") in kwargs["data"]
             return 201, {
                 "document_id": "doc-1",
                 "family_id": "family-1",
@@ -188,13 +195,13 @@ def test_live_demo_executes_the_hr_handoff_lifecycle(monkeypatch, capsys):
         return [item for nested in value for item in collect_strings(nested)]
 
     cited_summary = next(summary for summary in summaries if summary.get("status") == "cited")
-    assert cited_summary["reply"].endswith("[source:doc-1]")
+    assert cited_summary["display_reply"] == "年假制度说明 来源：《北辰科技年假制度》"
+    assert "[source:doc-1]" not in cited_summary["display_reply"]
     assert cited_summary["sources"][1] == {"source_id": "doc-1"}
-    assert "[source:doc-1]" in output
-    assert '"reply":' in output
+    assert '"display_reply":' in output
     assert '"source_type": "document"' in output
     assert '"source_id": "doc-1"' in output
-    assert '"title": "Annual Leave Policy"' in output
+    assert '"title": "北辰科技年假制度"' in output
     assert '"page_start": 2' in output
     assert '"page_end": 2' in output
     assert '"section_path": ["Annual Leave"]' in output

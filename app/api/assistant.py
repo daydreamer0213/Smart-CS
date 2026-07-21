@@ -78,6 +78,7 @@ async def chat(
         return AssistantChatResponse(
             session_id=session_id,
             reply=reply,
+            display_reply=assistant_service.render_reply_for_display(reply, sources),
             enabled_skills=allowed_hr_skill_names(),
             sources=sources,
             pending_handoff=pending_handoff,

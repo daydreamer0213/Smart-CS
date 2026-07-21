@@ -109,7 +109,7 @@ async def search_knowledge(query: str) -> str:
             else []
         )
         document_chunks = (
-            db_session.query(DocumentChunk, Document)
+            db_session.query(DocumentChunk, Document, DocumentFamily)
             .join(Document, DocumentChunk.document_id == Document.id)
             .outerjoin(DocumentFamily, Document.family_id == DocumentFamily.id)
             .filter(
@@ -139,7 +139,10 @@ async def search_knowledge(query: str) -> str:
             else []
         )
         item_map = {item.id: item for item in knowledge_items}
-        chunk_map = {chunk.id: (chunk, document) for chunk, document in document_chunks}
+        chunk_map = {
+            chunk.id: (chunk, document, family)
+            for chunk, document, family in document_chunks
+        }
 
         role = ctx.get("role")
         results = []
@@ -163,7 +166,7 @@ async def search_knowledge(query: str) -> str:
             chunk_entry = chunk_map.get(r["doc_id"])
             if chunk_entry is None:
                 continue
-            chunk, document = chunk_entry
+            chunk, document, family = chunk_entry
             if document.audience_roles and role not in document.audience_roles:
                 continue
             provenance = {
@@ -175,7 +178,7 @@ async def search_knowledge(query: str) -> str:
                 "id": chunk.id,
                 "source_type": "document",
                 "document_id": document.id,
-                "title": document.filename,
+                "title": family.name if family is not None else document.filename,
                 "chunk_index": chunk.chunk_index,
                 "content": chunk.content,
                 "score": round(r["score"], 4),

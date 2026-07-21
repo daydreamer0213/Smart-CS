@@ -1,5 +1,7 @@
 """Single enterprise-assistant chat contract tests."""
 
+from pathlib import Path
+
 from app.config import settings
 from app.core.auth.security import hash_password
 from app.core.auth.token import create_access_token
@@ -54,6 +56,47 @@ async def test_assistant_returns_hr_skills_sources_and_pending_handoff(client, d
         "expires_at": draft.expires_at.isoformat().replace("+00:00", "Z"),
     }
     assert "pending_action" not in body
+
+
+async def test_assistant_keeps_machine_citation_but_returns_readable_display_reply(
+    client, db, test_tenant, monkeypatch
+):
+    user = _employee(db, test_tenant)
+    source_id = "d9f7b879-6f80-46fc-a777-429f5ae59c3b"
+    sources = [{
+        "source_type": "document",
+        "source_id": source_id,
+        "title": "北辰科技年假制度",
+        "excerpt": "员工工作满一年后享有 5 个工作日年假。",
+        "score": 0.9,
+    }]
+
+    async def fake_hr_agent(*_args, **_kwargs):
+        return f"员工工作满一年后享有 5 个工作日年假。[source:{source_id}]", None, sources
+
+    monkeypatch.setattr("app.api.assistant.run_hr_agent", fake_hr_agent)
+    response = await client.post(
+        f"/api/v1/{test_tenant.slug}/assistant/chat",
+        headers={"Authorization": f"Bearer {create_access_token(user)}"},
+        json={"message": "年假如何计算？"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["reply"].endswith(f"[source:{source_id}]")
+    assert body["sources"][0]["source_id"] == source_id
+    assert body["display_reply"] == (
+        "员工工作满一年后享有 5 个工作日年假。来源：《北辰科技年假制度》"
+    )
+    assert source_id not in body["display_reply"]
+
+
+def test_employee_assistant_page_renders_the_readable_reply_field():
+    page = (Path(__file__).parents[1] / "static" / "assistant.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "addMessage('assistant',data.display_reply)" in page
 
 
 async def test_assistant_keeps_history_within_authenticated_user_session(client, db, test_tenant, monkeypatch):

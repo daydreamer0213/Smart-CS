@@ -106,6 +106,8 @@ def _require_live_chat(status: int, label: str) -> None:
 def _require_cited_answer(chat: dict) -> None:
     if not (chat.get("sources") or []) or "[source:" not in str(chat.get("reply") or ""):
         raise DemoFailure("policy answer did not contain an authorized source citation")
+    if not chat.get("display_reply") or "[source:" in str(chat["display_reply"]):
+        raise DemoFailure("policy answer did not contain a readable source title")
 
 
 def _require_pending_draft(chat: dict) -> str:
@@ -187,7 +189,10 @@ def main() -> int:
         "beichen-annual-leave-policy.txt",
         "北辰科技年假制度：全职员工工作满一年后享有 5 个工作日年假，至少提前 3 个工作日申请。".encode("utf-8"),
         "text/plain",
-        fields=[("audience_roles", "employee")],
+        fields=[
+            ("audience_roles", "employee"),
+            ("family_name", "北辰科技年假制度"),
+        ],
     )
     status, document = _request(
         "POST",
@@ -255,7 +260,11 @@ def main() -> int:
         }
         for source in policy_chat.get("sources", [])
     ]
-    _show_summary(reply=policy_chat.get("reply"), sources=safe_sources, status="cited")
+    _show_summary(
+        display_reply=policy_chat.get("display_reply"),
+        sources=safe_sources,
+        status="cited",
+    )
 
     _print_step("Reindex the current policy without service interruption")
     status, rebuilt = _request(

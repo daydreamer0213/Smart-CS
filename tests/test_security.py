@@ -161,7 +161,7 @@ async def test_search_enforces_governed_publication_lifecycle(
 
     employee = _user(db, test_tenant, "governed-search-employee@example.com")
 
-    current_family = DocumentFamily(tenant_id=test_tenant.id, name="Current policy")
+    current_family = DocumentFamily(tenant_id=test_tenant.id, name="北辰科技年假制度")
     db.add(current_family)
     db.flush()
     old = Document(
@@ -269,7 +269,7 @@ async def test_search_enforces_governed_publication_lifecycle(
     )
 
     assert {source["title"] for source in result["sources"]} == {
-        "current.txt",
+        "北辰科技年假制度",
         "legacy.txt",
     }
 

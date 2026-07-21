@@ -13,6 +13,7 @@ class AssistantChatRequest(BaseModel):
 class AssistantChatResponse(BaseModel):
     session_id: str
     reply: str
+    display_reply: str
     enabled_skills: list[str]
     sources: list[SourceCitation] = Field(default_factory=list)
     pending_handoff: HandoffDraftResponse | None = None

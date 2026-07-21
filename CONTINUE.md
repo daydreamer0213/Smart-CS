@@ -4,22 +4,22 @@
 
 ---
 
-你正在继续开发 SmartCS。请使用中文，直接务实。
+你正在维护已冻结的 SmartCS `v0.1.0` 求职作品集快照。请使用中文，直接务实。除非用户明确解除冻结，否则不要继续扩功能；只复现和修复缺陷、处理敏感信息或维护求职展示材料。
 
 ## 项目定位
 
 SmartCS 不是普通 FAQ 聊天机器人，也不再只包装成“智能客服后台”。当前定位是：
 
-> 多租户企业员工 Agent 后端样板：员工登录后，根据角色获得企业知识检索、CRM 查询、业务操作草稿和确认后写入能力。
+> 多租户企业 HR 服务 Agent 后端样板：员工登录后查询本人有权查看的制度，获得可读来源；制度未覆盖的例外经员工确认后进入 HR 支持生命周期。
 
 它服务郭铭福求职，重点证明：
 
 - Python AI 后端工程能力。
 - RAG / 文档导入 / 知识治理。
-- Agent 工具调用和角色化 Skill 暴露。
+- 受限 Agent 工具调用：制度检索、澄清、转人工草稿和本人请求状态。
 - JWT / API Key 多租户身份边界。
-- 受控 CRM 写操作：先生成草稿，用户显式确认后才写入。
-- 审计日志、幂等确认、错误处理和测试覆盖。
+- 受控 HR 支持写操作：Agent 只生成草稿，员工显式确认后才建单。
+- 可读来源、审计日志、幂等确认、错误处理和测试覆盖。
 
 不要把 SmartCS 讲成两年前的“FAQ 客服机器人”。要讲成企业 AI 应用落地时必须处理的后端工程闭环。
 
@@ -60,11 +60,9 @@ D:\DevData\smartcs\torch
 - M2-5 retrieval gate 已交付：8 indexed fixtures、11 curated facts-only chunks、12 golden queries、`top_k=3`；Recall@3 `11/12 = 91.67%`、MRR `91.67%`、已召回来源 provenance `100%`、gate passed，失败项为 `payroll-contact`。
 - M2-5 贡献统计为 BM25 11、vector 0；HashEmbedding 非语义，只验证向量通路，不能表述为混合语义检索质量。评测不调用 FastGPT、LLM 或 LLM judge，且不等于通用 PDF/OCR 准确率或生产 SLA。
 - 统一员工 Agent 入口：`/api/v1/{tenant_slug}/assistant/*`。
-- 角色化 Skills：
-  - `employee`：企业知识检索。
-  - `agent/admin/owner`：企业知识检索 + CRM 查询 + 业务操作草稿。
-- 本地 CRM MVP：客户概览、线索/任务操作草稿、显式确认、幂等确认、审计日志、重复线索保护。
-- 未认证旧 `/chat` 路由已下线；`/assistant` 是唯一员工 Agent 入口，`/business` 仅保留 JWT 保护的受控写入过渡接口。
+- HR Skills：制度检索、澄清、待确认转人工草稿、本人请求状态。
+- 后端保留 `[source:<id>]` 机器引用做授权校验；API 的 `display_reply` 和员工页面显示中文制度标题，不暴露裸 UUID。
+- 未认证旧 `/chat` 路由已下线；`/assistant` 是 HR 主入口，`/business` 仅保留为 JWT 保护的 Sales Copilot Lab 历史回归面。
 - 阶段 2C 已完成：修复主入口限流覆盖、BM25 增量语料丢失和文档分块无法被 Agent 检索的问题，并补齐对应回归测试。
 - 离线 `hash` embedding provider，用于无外部额度时稳定演示。
 - README、求职交付包、最终面试表达稿和 3 分钟演示稿。
@@ -81,12 +79,13 @@ D:\DevData\smartcs\torch
 - `scripts/demo_enterprise_flow.py`
 - `app/api/auth.py`
 - `app/api/assistant.py`
-- `app/api/business.py`
-- `app/core/agent/business_agent.py`
+- `app/api/hr_support.py`
+- `app/core/agent/hr_agent.py`
+- `app/core/agent/tools.py`
 - `app/services/assistant_service.py`
-- `app/services/business_service.py`
+- `app/services/hr_support_service.py`
 - `app/models/user.py`
-- `app/models/crm.py`
+- `app/models/hr.py`
 - `app/core/embedding/hash_provider.py`
 - `tests/test_auth.py`
 - `tests/test_assistant_api.py`
@@ -128,13 +127,14 @@ $env:LOG_DIR="$demoRoot/logs"
 
 - 不是已经商业上线的 SaaS。
 - 离线 HashEmbedding 只是演示和向量通路方案，不代表生产语义向量质量；M2-5 当前 11/12 命中均由 BM25 贡献。
-- 本地 CRM 是 fictional demo data，不是通用 CRM 集成平台。
+- `/business/*` 是 fictional Sales Copilot Lab，不是 SmartCS 的 HR 主路径或通用 CRM 集成平台。
 - UI 不是主卖点，主卖点是 Python AI 后端、RAG、Agent、权限边界、受控写操作和测试。
 
-## 下一步建议
+## 冻结与解冻规则
 
-M2 已收口。继续开发时，按顺序进入 M3 真实 HR 工具接入，再进入 M4 生产化加固；不要回退为 CRM 扩功能或重新包装 FAQ。
+`v0.1.0` 已完成发布前检查并进入维护冻结。未收到用户明确的“解除冻结”指令时，不启动 M3/M4，不回退为 CRM 扩功能，也不重新包装 FAQ。
 
-1. M3 只选一个可调用的 HR/OA 平台或沙箱，完成余额查询、本人工单、确认后请假草稿、组织/HR 联系人查询；不自研 HRIS。
-2. M4 再处理异步导入、失败重试、审计与可观测、通知/SLA、SSO/OIDC、CI/CD 与生产密钥治理。
-3. 投递演示先运行 `docs/operations/rag-evaluation-m2-5.md` 的命令，再按 `docs/interview/SMARTCS_DEMO_SCRIPT.md` 展示带来源的制度问答；公开 GitHub 前检查 `.env`、数据库、日志和缓存不要入库。
+1. 当前允许：复现并修复缺陷、依赖或密钥安全处理、求职材料和演示证据维护。
+2. 解冻后如确有可调用平台，M3 只接一个真实 HR/OA 沙箱；不自研 HRIS。
+3. 只有真实试点需要时才进入 M4 的异步导入、可观测、通知/SLA、SSO/OIDC、CI/CD 与生产密钥治理。
+4. 投递演示先运行 `docs/operations/rag-evaluation-m2-5.md` 的命令，再按 `docs/interview/SMARTCS_DEMO_SCRIPT.md` 展示带来源的制度问答。

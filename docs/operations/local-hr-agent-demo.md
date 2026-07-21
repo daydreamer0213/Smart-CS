@@ -46,7 +46,7 @@ $env:SMARTCS_BASE_URL = "http://127.0.0.1:8000"
 - 北辰科技租户及 owner、HR admin、employee 创建成功。
 - employee 受众的年假文档上传后为 `ready + pending_review`，此时尚不可被员工检索。
 - owner 审批后文档为 `approved + current`，员工检索才放行。
-- employee 的制度回答包含 `sources` 和 `[source:<id>]`。
+- employee 的制度回答在 `reply` 中保留授权校验所需的 `[source:<id>]`，`display_reply` 显示 `来源：《北辰科技年假制度》`，员工界面不展示裸 ID。
 - reindex 成功创建下一 `index_generation` 并保持 `ready + current`；失败时上一 current generation 不变。
 - 海外派驻例外请求返回 `pending_handoff`，员工确认后形成 `open` 工单。
 - HR admin 将工单依次更新为 `assigned`、`resolved`；employee 在 `/hr-support/me` 看到 `resolved`。

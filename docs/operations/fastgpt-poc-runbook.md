@@ -1,44 +1,43 @@
-# FastGPT PoC Runbook
+# FastGPT 有界 PoC 运行记录
 
-## Scope
+## 范围
 
-This local proof of concept uses only `docs/fixtures/fastgpt-poc/employee-leave-policy.md`.
-FastGPT is a replaceable RAG provider, not SmartCS's public product surface or system of record. SmartCS owns employee identity, tenant authorization, audit events, support-handoff records, and application business state.
+该本地 PoC 只使用 `docs/fixtures/fastgpt-poc/employee-leave-policy.md`。FastGPT 是可替换的 RAG 提供方，不是 SmartCS 的产品入口或业务事实来源。员工身份、租户授权、审计事件、转人工记录和应用业务状态仍由 SmartCS 负责。
 
-## Storage
+## 存储位置
 
-- Deployment root: `D:\DevData\smartcs-fastgpt-poc\deployment`
-- Docker Desktop program files and disk image must remain on `D:`.
-- Local credentials: `.env.fastgpt-poc` at repository root; this file is ignored by Git.
+- 部署目录：`D:\DevData\smartcs-fastgpt-poc\deployment`
+- Docker Desktop 程序文件与磁盘镜像必须保留在 D 盘。
+- 本地凭据：仓库根目录 `.env.fastgpt-poc`，该文件已被 Git 忽略。
 
-## Required preflight output
+## 预检要求
 
-Record Docker Desktop version, Docker Engine version, Compose version, the D: free space before deployment, and the configured Docker disk-image location. Do not record passwords, API keys, app IDs, or private IP addresses.
+记录 Docker Desktop、Docker Engine、Compose 版本，部署前 D 盘剩余空间，以及 Docker 磁盘镜像位置。不要记录密码、API Key、App ID 或私有 IP。
 
-## Preflight result (2026-07-17)
+## 预检结果（2026-07-17）
 
-Status: passed.
+**状态：通过。**
 
-- Docker Desktop 4.82.0 is running with Engine 29.6.1 and Compose v5.3.0.
-- The `desktop-linux` context uses the WSL 2 backend. `docker version`, `docker compose version`, `docker info`, and `docker ps` all return successfully.
-- `D:` has 75.89 GiB free after installation, which is sufficient for this bounded PoC.
-- Docker disk image location: `D:`.
-- No FastGPT or PoC images have been pulled.
-- A copied legacy Docker Desktop 4.79.0 directory and a 7.15 GiB `docker_data.vhdx` exist under `D:\2026.07.09\docker`. Leave them untouched; do not run the copied binaries or attach the old data disk directly.
+- Docker Desktop 4.82.0 正常运行，Engine 29.6.1，Compose v5.3.0。
+- `desktop-linux` 使用 WSL 2 后端；`docker version`、`docker compose version`、`docker info`、`docker ps` 均执行成功。
+- 安装后 D 盘剩余 75.89 GiB，满足此有界 PoC。
+- Docker 磁盘镜像位于 D 盘。
+- 当时尚未拉取 FastGPT 或 PoC 镜像。
+- `D:\2026.07.09\docker` 下存在从旧电脑复制的 Docker Desktop 4.79.0 和 7.15 GiB `docker_data.vhdx`；不运行旧二进制，也不直接挂载旧数据盘。
 
-## Deployment result (2026-07-17)
+## 部署结果（2026-07-17）
 
-Status: passed.
+**状态：通过。**
 
-- Compose source: FastGPT documented v4.15 PgVector deployment.
-- Image tags: `registry.cn-hangzhou.aliyuncs.com/fastgpt/mongo:5.0.32`, `registry.cn-hangzhou.aliyuncs.com/fastgpt/pgvector:0.8.0-pg15`, `registry.cn-hangzhou.aliyuncs.com/fastgpt/fastgpt-plugin:v1.0.1`, `registry.cn-hangzhou.aliyuncs.com/fastgpt/minio:RELEASE.2025-09-07T16-13-09Z`, `registry.cn-hangzhou.aliyuncs.com/fastgpt/redis:7.2-alpine`, `registry.cn-hangzhou.aliyuncs.com/fastgpt/fastgpt:v4.15.1`, `registry.cn-hangzhou.aliyuncs.com/fastgpt/fastgpt-code-sandbox:v4.15.0`, `registry.cn-hangzhou.aliyuncs.com/fastgpt/fastgpt-mcp_server:v4.14.23`, and `registry.cn-hangzhou.aliyuncs.com/labring/aiproxy:v0.6.5`.
-- FastGPT local endpoint: `http://127.0.0.1:3000` returned HTTP 200.
-- Container health: passed. All required containers are running; components with health checks report healthy, and FastGPT/AIProxy both have zero restarts after an observation window.
-- Generated credentials: stored only under `D:\DevData\smartcs-fastgpt-poc\deployment`.
-- `D:` retained 67.23 GiB free after deployment.
+- Compose 来源：FastGPT 官方 v4.15 PgVector 部署方案。
+- 核心镜像版本：Mongo 5.0.32、PgVector 0.8.0-pg15、FastGPT 4.15.1、Redis 7.2、AIProxy 0.6.5；精确镜像记录保留在部署目录的 Compose 文件中。
+- `http://127.0.0.1:3000` 返回 HTTP 200。
+- 必需容器均在运行，带健康检查的组件状态正常；观察窗口内 FastGPT 与 AIProxy 重启次数为 0。
+- 生成的凭据只保存在 `D:\DevData\smartcs-fastgpt-poc\deployment`。
+- 部署后 D 盘剩余 67.23 GiB。
 
-Next action: configure a local model provider, import the one fictional policy document, and create the bounded knowledge-base Q&A application.
+该 PoC 已完成框架可用性验证，但 SmartCS 最终保留自有 Python 后端、治理和权限主线，不把 FastGPT 配置本身作为核心技术成果。
 
-## Shutdown
+## 停止服务
 
-From the deployment directory, run `docker compose down`. Do not use `-v` until the PoC decision has been recorded and no evidence is needed.
+在部署目录执行 `docker compose down`。在确认不再需要 PoC 数据和验收证据前，不使用 `-v`。

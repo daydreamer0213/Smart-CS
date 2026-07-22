@@ -1,4 +1,4 @@
-# SmartCS Continue Prompt
+# SmartCS 项目接手说明
 
 复制给新会话使用。
 
@@ -40,6 +40,8 @@ Python: D:\2026.07.09\conda-envs\smart-cs\python.exe
 conda:  D:\2026.07.09\conda\Scripts\conda.exe
 ```
 
+当前 Python 版本为 `3.12.13`。Docling/Tesseract 是可选高级解析依赖，不在基础 `requirements.txt` 中；需要时按 `docs/operations/docling-ocr-setup.md` 安装。
+
 大文件和依赖缓存放 D 盘：
 
 ```text
@@ -52,6 +54,7 @@ D:\DevData\smartcs\torch
 
 已完成：
 
+- 2026-07-22 当前 `main` 完整回归为 `405 passed, 4 skipped`；`v0.1.0` 标签快照仍保留原始 `403 passed, 4 skipped` 记录。
 - 新电脑环境恢复，依赖和缓存路径整理到 D 盘。
 - JWT 登录、多租户身份边界、owner/admin/agent/employee 角色。
 - 企业知识库 RAG：FAQ 与文档分块统一检索，文档导入、分块、ChromaDB、BM25、后台治理。
@@ -62,7 +65,8 @@ D:\DevData\smartcs\torch
 - 统一员工 Agent 入口：`/api/v1/{tenant_slug}/assistant/*`。
 - HR Skills：制度检索、澄清、待确认转人工草稿、本人请求状态。
 - 后端保留 `[source:<id>]` 机器引用做授权校验；API 的 `display_reply` 和员工页面显示中文制度标题，不暴露裸 UUID。
-- 未认证旧 `/chat` 路由已下线；`/assistant` 是 HR 主入口，`/business` 仅保留为 JWT 保护的 Sales Copilot Lab 历史回归面。
+- `/static/assistant.html` 员工页面使用真实 HR 转人工契约：读取 `pending_handoff`，并通过 `/api/v1/{tenant_slug}/hr-support/drafts/{draft_id}/confirm` 完成员工确认。
+- 未认证旧 `/chat` 路由已下线；`/api/v1/{tenant_slug}/assistant/*` 是 HR 主 API，`/business` 仅保留为 JWT 保护的 Sales Copilot Lab 历史回归面。
 - 阶段 2C 已完成：修复主入口限流覆盖、BM25 增量语料丢失和文档分块无法被 Agent 检索的问题，并补齐对应回归测试。
 - 离线 `hash` embedding provider，用于无外部额度时稳定演示。
 - README、求职交付包、最终面试表达稿和 3 分钟演示稿。
@@ -70,6 +74,7 @@ D:\DevData\smartcs\torch
 ## 核心文件
 
 - `README.md`
+- `docs/README.md`
 - `docs/interview/SMARTCS_DELIVERY_PACKAGE.md`
 - `docs/interview/SMARTCS_FINAL_PITCH.md`
 - `docs/interview/SMARTCS_INTERVIEW.md`
@@ -127,7 +132,7 @@ $env:LOG_DIR="$demoRoot/logs"
 
 - 不是已经商业上线的 SaaS。
 - 离线 HashEmbedding 只是演示和向量通路方案，不代表生产语义向量质量；M2-5 当前 11/12 命中均由 BM25 贡献。
-- `/business/*` 是 fictional Sales Copilot Lab，不是 SmartCS 的 HR 主路径或通用 CRM 集成平台。
+- `/business/*` 是虚构数据驱动的 Sales Copilot Lab，不是 SmartCS 的 HR 主路径或通用 CRM 集成平台。
 - UI 不是主卖点，主卖点是 Python AI 后端、RAG、Agent、权限边界、受控写操作和测试。
 
 ## 冻结与解冻规则

@@ -1,18 +1,10 @@
-# Docling and Tesseract Setup
+# Docling 与 Tesseract 配置
 
-Docling and Tesseract are optional local dependencies. The supported local
-Windows profile keeps package caches, model artifacts, and OCR language data
-under `D:\DevData\smartcs`. Do not add this optional dependency to
-`requirements.txt`.
+Docling 和 Tesseract 是可选的本地高级解析依赖，不加入基础 `requirements.txt`。Windows 支持配置将安装缓存、模型、OCR 语言包和临时文件统一放在 `D:\DevData\smartcs`。SmartCS 只使用明确配置的 Tesseract CLI 做 OCR，不自动切换其他 OCR 后端。
 
-SmartCS uses the configured Tesseract CLI only for OCR. Do not enable an
-automatic or alternate OCR backend.
+## 设置本地路径
 
-## Set the local paths
-
-Run these commands in PowerShell from the repository root. The block sets
-environment variables for the current shell and creates the listed `D:`
-directories if they do not already exist.
+在仓库根目录打开 PowerShell，设置当前终端变量并创建 D 盘目录：
 
 ```powershell
 $env:PIP_CACHE_DIR = 'D:\DevData\smartcs\pip'
@@ -31,65 +23,37 @@ $env:OMP_NUM_THREADS = '4'
 New-Item -ItemType Directory -Force $env:PIP_CACHE_DIR, $env:CONDA_PKGS_DIRS, $env:PARSER_TEMP_DIR, $env:DOCLING_ARTIFACTS_PATH, $env:HF_HOME, $env:TORCH_HOME, $env:TESSDATA_PREFIX | Out-Null
 ```
 
-`TESSDATA_PREFIX` is normalized to end in a slash. All parser paths must be
-children of `PARSER_DATA_ROOT`; the default therefore confines them to
-`D:\DevData\smartcs`. A non-Windows deployment may set an explicit absolute
-root and matching child paths. Copy the same values into the local `.env` only
-when enabling this optional parser; do not commit that file.
+`TESSDATA_PREFIX` 必须以斜杠结尾。所有解析器路径都必须位于 `PARSER_DATA_ROOT` 下；默认配置因此被限制在 `D:\DevData\smartcs`。只有启用高级解析时才把同样配置写入本地 `.env`，不要提交 `.env`。
 
-Do not set `TEMP` or `TMP` manually for the application. Uvicorn startup reads
-the parser paths through `Settings` and configures `TEMP`, `TMP`, `HF_HOME`,
-`TORCH_HOME`, `TESSDATA_PREFIX`, and Python's `tempfile` directory before serving
-requests. The structured benchmark calls the same runtime helper explicitly.
+不要手动修改应用进程的 `TEMP` 或 `TMP`。Uvicorn 启动和结构化基准脚本会通过同一运行时辅助函数设置并校验临时目录、模型缓存和 Tesseract 数据路径。
 
-## Inspect and install Docling
+## 安装 Docling
 
-First resolve the optional requirements without installing them. `PIP_CACHE_DIR`
-must be set as above before this command so pip metadata and downloads use `D:`.
+先做 dry-run，确认解析结果和下载位置；执行前必须设置上面的 `PIP_CACHE_DIR`：
 
 ```powershell
 & 'D:\2026.07.09\conda-envs\smart-cs\python.exe' -m pip install --dry-run -r requirements-docling.txt
 ```
 
-After reviewing the resolver output, install the optional package:
+确认后安装可选依赖：
 
 ```powershell
 & 'D:\2026.07.09\conda-envs\smart-cs\python.exe' -m pip install -r requirements-docling.txt
 ```
 
-The optional requirement is deliberately limited to Docling PDF support and
-local models. It does not select an OCR backend; OCR remains the configured
-Tesseract CLI only. The headless OpenCV dependency is required by Docling's
-TableFormer model and does not provide or select an OCR backend.
+`requirements-docling.txt` 只增加 Docling PDF、本地模型和 TableFormer 所需的 headless OpenCV，不选择其他 OCR 后端。文件锁定当前 Windows CPU 环境验证过的 `torch==2.12.1` 与 `torchvision==0.27.1`；修改版本前必须重新在 D 盘 dry-run 并运行完整回归。
 
-`requirements-docling.txt` pins `torch==2.12.1` and
-`torchvision==0.27.1`, the verified Windows CPU pair for this SmartCS conda
-environment. This preserves the installed CPU Torch instead of allowing an
-unconstrained torchvision update to replace it. Any change to either pin
-requires a fresh D-drive dry-run followed by the full regression suite before
-installation.
-
-## Prefetch local models
-
-After Docling is installed, download the default local models directly into
-the configured artifact directory:
+## 预下载本地模型
 
 ```powershell
 & 'D:\2026.07.09\conda-envs\smart-cs\Scripts\docling-tools.exe' models download layout tableformer --output-dir $env:DOCLING_ARTIFACTS_PATH
 ```
 
-Use `--all` only when a later parser feature explicitly needs every optional
-model. The adapter passes `DOCLING_ARTIFACTS_PATH` to Docling's PDF pipeline
-options and does not download models while handling a request.
+只有后续解析能力明确需要时才使用 `--all`。请求处理期间不应临时下载模型。
 
-## Install and verify Tesseract
+## 安装并验证 Tesseract
 
-Use the verified local Tesseract environment at
-`D:\DevData\smartcs\tesseract-env`, where the executable is under
-`Library\bin` and both `eng.traineddata` and `chi_sim.traineddata` are under
-`share\tessdata`. Create it from conda-forge with all packages and caches on
-`D:`. `libcurl` is explicit because the Windows Tesseract build links to
-`libcurl.dll` but did not pull that runtime into the initial environment:
+使用独立的 D 盘 conda 环境。`libcurl` 必须显式安装，因为 Windows Tesseract 依赖 `libcurl.dll`：
 
 ```powershell
 & 'D:\2026.07.09\conda\Scripts\conda.exe' create `
@@ -98,7 +62,7 @@ Use the verified local Tesseract environment at
     'tesseract=5.5.2' libcurl -y
 ```
 
-Then verify the executable and require both languages:
+验证可执行文件，并要求中文简体和英文语言包同时存在：
 
 ```powershell
 & $env:TESSERACT_CMD --version
@@ -107,37 +71,21 @@ $missing = @('eng', 'chi_sim') | Where-Object { $_ -notin $languages }
 if ($missing) { throw "Missing Tesseract languages: $($missing -join ', ')" }
 ```
 
-The language check must succeed for both `eng` and `chi_sim`. Keep the
-executable and `tessdata` directory together under `PARSER_DATA_ROOT`; do not
-rely on a system-drive installation or a machine-wide `PATH` entry.
+不要依赖 C 盘安装或机器级 `PATH`。
 
-## Verified runtime evidence
+## 已验证运行环境
 
-Verified 2026-07-18 on the supported Windows CPU environment:
+2026-07-18 在 Windows CPU 环境验证：
 
 - Python 3.12.13
-- docling-slim 2.113.0
-- docling-core 2.87.1
-- docling-ibm-models 3.13.3
+- docling-slim 2.113.0、docling-core 2.87.1、docling-ibm-models 3.13.3
 - opencv-python-headless 4.13.0.92
-- torch 2.12.1
-- torchvision 0.27.1
-- Tesseract 5.5.2 with `chi_sim+eng`
+- torch 2.12.1、torchvision 0.27.1
+- Tesseract 5.5.2，包含 `chi_sim` 与 `eng`
 
-The verified parser configuration is CPU, 4 threads, full-page Tesseract CLI
-OCR, offline layout/TableFormer artifacts under
-`D:\DevData\smartcs\docling\artifacts`, and Python tempfile resolution to
-`D:\DevData\smartcs\tmp`. `_validate_runtime_paths` checks the resolved
-runtime temp directory is the configured parser temp directory or one of its
-children. A mismatch produces the same controlled unavailable-runtime outcome
-as a missing executable, language pack, or model artifact. Application startup
-sets the required process-global runtime variables from validated Settings.
+验证配置为 CPU、4 线程、整页 Tesseract CLI OCR，layout/TableFormer 模型位于 `D:\DevData\smartcs\docling\artifacts`，Python 临时目录位于 `D:\DevData\smartcs\tmp`。路径、可执行文件、语言包或模型不符合要求时，系统返回受控的运行时不可用结果。
 
-## Audit cache locations before parsing
-
-Before the first real parse, confirm that every configured location resolves
-to `D:` and inspect common system-drive cache locations for unexpected new
-Docling, Hugging Face, Torch, or pip data:
+## 首次解析前检查缓存
 
 ```powershell
 @($env:PIP_CACHE_DIR, $env:PARSER_DATA_ROOT, $env:PARSER_TEMP_DIR, $env:DOCLING_ARTIFACTS_PATH, $env:HF_HOME, $env:TORCH_HOME, $env:TESSDATA_PREFIX) |
@@ -153,7 +101,4 @@ Get-ChildItem -File -Force -Recurse 'C:\Windows\Temp', "$env:LOCALAPPDATA\Temp" 
     Select-Object FullName, Length, LastWriteTime
 ```
 
-For the supported Windows profile, if the audit finds newly created parser
-data or unexpected large parser artifacts in common `C:` temp directories,
-stop before parsing documents and correct the environment variables or
-artifact target.
+如发现新产生的解析缓存或大型模型文件写入 C 盘，先停止解析并修正环境变量或目标路径。

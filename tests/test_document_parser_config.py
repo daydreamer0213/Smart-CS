@@ -23,7 +23,7 @@ def test_docling_runtime_versions_and_configuration_are_committed():
     ).read_text(encoding="utf-8")
 
     for expected in (
-        "Verified 2026-07-18",
+        "2026-07-18 在 Windows CPU 环境验证",
         "Python 3.12.13",
         "docling-slim 2.113.0",
         "docling-core 2.87.1",
@@ -32,8 +32,8 @@ def test_docling_runtime_versions_and_configuration_are_committed():
         "torch 2.12.1",
         "torchvision 0.27.1",
         "Tesseract 5.5.2",
-        "`chi_sim+eng`",
-        "CPU, 4 threads",
+        "`chi_sim` 与 `eng`",
+        "CPU、4 线程",
         "`D:\\DevData\\smartcs\\tmp`",
     ):
         assert expected in evidence

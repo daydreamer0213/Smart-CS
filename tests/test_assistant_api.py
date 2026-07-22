@@ -99,6 +99,25 @@ def test_employee_assistant_page_renders_the_readable_reply_field():
     assert "addMessage('assistant',data.display_reply)" in page
 
 
+async def test_employee_assistant_page_is_served_from_static_mount(client):
+    response = await client.get("/static/assistant.html")
+
+    assert response.status_code == 200
+    assert "SmartCS 企业员工助手" in response.text
+
+
+def test_employee_assistant_page_uses_the_hr_handoff_contract():
+    page = (Path(__file__).parents[1] / "static" / "assistant.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "data.pending_handoff" in page
+    assert "/hr-support/drafts/${draft.id}/confirm" in page
+    assert "data.pending_action" not in page
+    assert "/assistant/action-drafts/" not in page
+    assert "CRM" not in page
+
+
 async def test_assistant_keeps_history_within_authenticated_user_session(client, db, test_tenant, monkeypatch):
     user = _employee(db, test_tenant)
     seen_history = []
